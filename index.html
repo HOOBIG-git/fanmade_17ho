@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>逆境無頼カイジ - 17歩 (Jūnana-Ho) Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Title Screen -->
+        <div id="title-screen" class="screen active">
+            <div class="zawa-bg">ざわ… ざわ…</div>
+            <h1 class="game-title"><span>奇跡のゲーム</span><br>１７歩 <span class="sub-title">JŪNANA-HO</span></h1>
+            <p class="subtitle-desc">命を賭けた究極の麻雀勝負——全17巡の心理戦</p>
+            <div class="menu-buttons">
+                <button id="start-1p-btn" class="kaiji-btn">1P vs 村上 (CPU)</button>
+                <button id="start-2p-btn" class="kaiji-btn secondary">2P対戦 (友達と勝負)</button>
+                <button id="rules-btn" class="kaiji-btn secondary">ルール説明 (RULES)</button>
+            </div>
+            <div class="author-credit">原作：福本伸行「賭博黙示録カイジ」</div>
+        </div>
+
+        <!-- Rules Modal / Screen -->
+        <div id="rules-modal" class="modal">
+            <div class="modal-content">
+                <h2>１７歩（じゅうななほ）ルール</h2>
+                <ul>
+                    <li><strong>基本概要：</strong> 2人打ちの麻雀勝負。ランダムに配られた30枚の持ち牌プールから、手牌（13枚）と17巡分の山（17枚）を構築します。</li>
+                    <li><strong>公正な配牌：</strong> 麻雀の牌山からランダムに30枚が配分されるため、同じ牌が5枚以上存在するなどの不正や偏りは一切ありません。</li>
+                    <li><strong>2P対戦モード：</strong> 同じ端末を交互に持って遊ぶ「パス＆プレイ」対応。お互いに手牌と山を隠して真剣勝負！</li>
+                </ul>
+                <button id="close-rules-btn" class="kaiji-btn">閉じる</button>
+            </div>
+        </div>
+
+        <!-- Privacy Interstitial Screen (for 2P mode) -->
+        <div id="privacy-screen" class="modal">
+            <div class="modal-content text-center">
+                <h2 id="privacy-title">手番交代</h2>
+                <p id="privacy-msg">デバイスを次のプレイヤーに渡してください。</p>
+                <button id="privacy-ready-btn" class="kaiji-btn">準備完了 (READY)</button>
+            </div>
+        </div>
+
+        <!-- Deck/Hand Setup Screen -->
+        <div id="setup-screen" class="screen">
+            <header class="game-header">
+                <h2 id="setup-header-title">牌構築フェーズ (DECK SETUP)</h2>
+                <p id="setup-status">配られた30枚のプールから、手牌13枚と山17枚を配分してください。</p>
+            </header>
+            <div class="setup-container">
+                <div class="setup-top-bar">
+                    <div class="preset-section">
+                        <h3>操作</h3>
+                        <div class="preset-buttons">
+                            <button class="preset-btn secondary" id="auto-distribute-btn">自動配分 (AUTO)</button>
+                            <button class="preset-btn secondary" id="sort-pool-btn">理牌 (SORT)</button>
+                            <button class="preset-btn secondary" id="clear-deck-btn">リセット</button>
+                        </div>
+                    </div>
+                    <div class="builder-modes">
+                        <button id="mode-hand-btn" class="mode-btn active">手牌に置く (<span id="hand-count">0</span>/13)</button>
+                        <button id="mode-wall-btn" class="mode-btn">山に置く (<span id="wall-count">0</span>/17)</button>
+                    </div>
+                </div>
+
+                <div class="deck-workspace">
+                    <div class="builder-preview-area">
+                        <div class="preview-box">
+                            <h4>手牌 (13枚) [クリックでプールに戻す]</h4>
+                            <div id="setup-hand-tiles" class="tile-row"></div>
+                        </div>
+                        <div class="preview-box">
+                            <h4>17歩の山 (17枚) [クリックでプールに戻す]</h4>
+                            <div id="setup-wall-tiles" class="tile-row"></div>
+                        </div>
+                    </div>
+
+                    <div class="tile-bank-area">
+                        <h4 id="pool-title">あなたの配牌プール (残り <span id="pool-count">30</span>枚) [クリックして手牌/山に追加]</h4>
+                        <div id="tile-pool" class="tile-grid-bank"></div>
+                    </div>
+                </div>
+
+                <div class="setup-actions">
+                    <button id="confirm-deck-btn" class="kaiji-btn" disabled>構築完了 (CONFIRM)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Battle Screen -->
+        <div id="battle-screen" class="screen">
+            <div id="zawa-overlay" class="zawa-overlay">ざわ… ざわ…</div>
+            <div id="yaku-cutin" class="yaku-cutin"></div>
+            <div id="final-turn-overlay" class="final-turn-overlay"></div>
+
+            <div class="battle-header">
+                <div class="player-info opponent-info">
+                    <span class="name" id="p2-name">対戦相手：村上（帝愛グループ）</span>
+                    <span class="points" id="p2-points">持点: 25,000点</span>
+                    <span class="debt" id="p2-debt">借金: ¥0</span>
+                </div>
+                <div class="turn-counter">
+                    <span id="round-display">第1局</span>
+                    <span id="turn-display">1 / 17 巡目</span>
+                </div>
+                <div class="player-info user-info">
+                    <span class="name" id="p1-name">伊藤 開示 (あなた)</span>
+                    <span class="points" id="p1-points">持点: 25,000点</span>
+                    <span class="debt" id="p1-debt">借金: ¥0</span>
+                </div>
+            </div>
+
+            <div class="board-arena">
+                <div class="opponent-area side-area">
+                    <div class="opponent-hand">
+                        <div class="label" id="p2-hand-label">相手の手牌（伏せ）</div>
+                        <div id="p2-hand-container" class="tile-row"></div>
+                    </div>
+                    <div class="opponent-wall">
+                        <div class="label">相手の残り山: <span id="p2-wall-count">17</span>枚</div>
+                    </div>
+                    <div class="opponent-river">
+                        <div class="label">相手の河</div>
+                        <div id="p2-river-container" class="tile-grid"></div>
+                    </div>
+                </div>
+
+                <div class="center-stage">
+                    <div id="kaiji-dialogue" class="dialogue-box">
+                        <p id="dialogue-text"><span>「勝たなきゃダメだ…！勝たなくちゃ…！！」</span></p>
+                    </div>
+                    <div class="action-buttons-container">
+                        <button id="draw-btn" class="action-btn primary" disabled>ツモる (DRAW)</button>
+                        <button id="ron-btn" class="action-btn ron" disabled>ロン (RON)</button>
+                        <button id="tsumo-btn" class="action-btn tsumo" disabled>ツモ和了 (TSUMO)</button>
+                    </div>
+                </div>
+
+                <div class="user-area side-area">
+                    <div class="user-river">
+                        <div class="label">自分の河（捨て牌）</div>
+                        <div id="p1-river-container" class="tile-grid"></div>
+                    </div>
+                    <div class="user-wall">
+                        <div class="label">自分の残り山: <span id="p1-wall-count">17</span>枚</div>
+                        <div id="p1-wall-preview" class="tile-row small"></div>
+                    </div>
+                    <div class="user-wait-area">
+                        <div class="label">待ち牌: <span id="p1-wait-tiles">なし</span></div>
+                        <div id="p1-wait-container" class="tile-row small"></div>
+                    </div>
+                    <div class="user-hand">
+                        <div class="label" id="p1-hand-label">自分の手牌（13枚 + ツモ牌）</div>
+                        <div id="p1-hand-container" class="tile-row"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Result Modal / Screen -->
+        <div id="result-modal" class="modal">
+            <div class="modal-content result-content">
+                <h2 id="result-title">勝負決着</h2>
+                <p id="result-message">見事勝利した！</p>
+                <div class="result-stats">
+                    <div id="score-change">点数移動: +8000点</div>
+                </div>
+                <div class="result-actions">
+                    <button id="next-match-btn" class="kaiji-btn">次の勝負へ</button>
+                    <button id="restart-game-btn" class="kaiji-btn secondary">タイトルに戻る</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -265,7 +265,6 @@ async function joinRoom() {
     const data = snapshot.val();
 
     if (!data) {
-        // Host
         gameState.myPlayerNum = 1;
         gameState.oppPlayerNum = 2;
         await roomRef.set({
@@ -286,7 +285,6 @@ async function joinRoom() {
         });
         statusEl.textContent = "ルーム作成完了！相手を待っています...";
     } else {
-        // Guest
         gameState.myPlayerNum = 2;
         gameState.oppPlayerNum = 1;
         await roomRef.child('players').update({
@@ -307,6 +305,10 @@ function setupFirebaseListener() {
         const data = snapshot.val();
         if (!data) return;
 
+        if (data.status === 'playing' && screens.setup && screens.setup.classList.contains('active')) {
+            startBattle();
+        }
+
         gameState.activePlayer = data.activePlayer;
         gameState.turn = data.turn;
         gameState.round = data.round;
@@ -318,18 +320,27 @@ function setupFirebaseListener() {
         updateBattleUI();
     });
 
-    roomRef.child('players').on('value', snapshot => {
+    roomRef.child('players').on('value', async snapshot => {
         const players = snapshot.val();
         if (!players) return;
 
-        // Check if both P1 and P2 are ready
         const playerList = Object.values(players);
         const p1 = playerList.find(p => p.role === 1);
         const p2 = playerList.find(p => p.role === 2);
 
         if (p1 && p2 && p1.ready && p2.ready) {
-            if (screens.setup.classList.contains('active')) {
-                startBattle();
+            try {
+                const publicSnap = await roomRef.child('public/status').once('value');
+                const currentStatus = publicSnap.val();
+
+                if (currentStatus !== 'playing') {
+                    await roomRef.child('public').update({
+                        status: 'playing',
+                        activePlayer: 1
+                    });
+                }
+            } catch (e) {
+                console.error("Error updating status to playing:", e);
             }
         }
     });
@@ -396,50 +407,60 @@ function updateBuilderUI() {
     const hand = gameState.myHand;
     const wall = gameState.myWall;
 
-    document.getElementById('hand-count').textContent = hand.length;
-    document.getElementById('wall-count').textContent = wall.length;
-    document.getElementById('pool-count').textContent = pool.length;
+    document.getElementById('hand-count').textContent = (hand || []).length;
+    document.getElementById('wall-count').textContent = (wall || []).length;
+    document.getElementById('pool-count').textContent = (pool || []).length;
 
     const handContainer = document.getElementById('setup-hand-tiles');
-    handContainer.innerHTML = '';
-    hand.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        handContainer.appendChild(el);
-    });
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        (hand || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            handContainer.appendChild(el);
+        });
+    }
 
     const wallContainer = document.getElementById('setup-wall-tiles');
-    wallContainer.innerHTML = '';
-    wall.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        wallContainer.appendChild(el);
-    });
+    if (wallContainer) {
+        wallContainer.innerHTML = '';
+        (wall || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            wallContainer.appendChild(el);
+        });
+    }
 
     const poolContainer = document.getElementById('tile-pool');
-    poolContainer.innerHTML = '';
-    pool.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => {
-            if (gameState.builderMode === 'hand' && hand.length < 13) {
-                pool.splice(idx, 1); hand.push(t);
-                if (hand.length === 13) setBuilderMode('wall');
-                updateBuilderUI();
-            } else if (gameState.builderMode === 'wall' && wall.length < 17) {
-                pool.splice(idx, 1); wall.push(t);
-                updateBuilderUI();
-            }
-        });
-        poolContainer.appendChild(el);
-    });
+    if (poolContainer) {
+        poolContainer.innerHTML = '';
+        (pool || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => {
+                if (gameState.builderMode === 'hand' && (hand || []).length < 13) {
+                    pool.splice(idx, 1); hand.push(t);
+                    if (hand.length === 13) setBuilderMode('wall');
+                    updateBuilderUI();
+                } else if (gameState.builderMode === 'wall' && (wall || []).length < 17) {
+                    pool.splice(idx, 1); wall.push(t);
+                    updateBuilderUI();
+                }
+            });
+            poolContainer.appendChild(el);
+        }
+    }
 
-    document.getElementById('confirm-deck-btn').disabled = !(hand.length === 13 && wall.length === 17);
+    const confirmBtn = document.getElementById('confirm-deck-btn');
+    if (confirmBtn) confirmBtn.disabled = !((hand || []).length === 13 && (wall || []).length === 17);
 }
 
 async function handleDeckConfirm() {
     if (gameState.gameMode === 'online') {
+        // 構築した手牌と山をFirebaseに保存
         await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).update({
-            ready: true
+            ready: true,
+            hand: gameState.myHand,
+            wall: gameState.myWall
         });
         setDialogue("構築完了！相手の準備を待っています…");
         document.getElementById('confirm-deck-btn').disabled = true;
@@ -525,7 +546,8 @@ function updateBattleUI() {
         if (gameState.drawnTile) {
             waitText.textContent = "ツモ中...";
         } else {
-            const waitingTiles = evaluator.getWaitingTiles(gameState.myHand);
+            const currentHand = gameState.myHand || [];
+            const waitingTiles = evaluator.getWaitingTiles(currentHand);
             if (waitingTiles.length > 0) {
                 waitText.textContent = "テンパイ！";
                 waitingTiles.forEach(tileStr => {
@@ -539,23 +561,35 @@ function updateBattleUI() {
     }
 
     const handContainer = document.getElementById('p1-hand-container');
-    handContainer.innerHTML = '';
-    gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
-    if (gameState.drawnTile) {
-        const drawnEl = createTileElement(gameState.drawnTile);
-        drawnEl.style.border = '2px solid #ffd700';
-        handContainer.appendChild(drawnEl);
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        const currentHand = gameState.myHand || [];
+        currentHand.forEach(t => handContainer.appendChild(createTileElement(t)));
+        if (gameState.drawnTile) {
+            const drawnEl = createTileElement(gameState.drawnTile);
+            drawnEl.style.border = '2px solid #ffd700';
+            drawnEl.style.cursor = 'pointer';
+            drawnEl.title = 'クリックして捨てる (自摸切り)';
+            drawnEl.addEventListener('click', () => playerDiscard(gameState.drawnTile));
+            handContainer.appendChild(drawnEl);
+        }
     }
 
     const myRiverEl = document.getElementById('p1-river-container');
-    myRiverEl.innerHTML = '';
-    gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    if (myRiverEl) {
+        myRiverEl.innerHTML = '';
+        const myRiver = gameState.myRiver || [];
+        myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    }
 
     const oppRiverEl = document.getElementById('p2-river-container');
-    oppRiverEl.innerHTML = '';
-    gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+    if (oppRiverEl) {
+        oppRiverEl.innerHTML = '';
+        const oppRiver = gameState.oppRiver || [];
+        oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+    }
 
-    document.getElementById('p1-wall-count').textContent = gameState.myWall.length;
+    document.getElementById('p1-wall-count').textContent = (gameState.myWall || []).length;
     document.getElementById('p2-wall-count').textContent = gameState.oppWallCount;
 
     document.getElementById('draw-btn').disabled = !isMyTurn || gameState.drawnTile !== null;
@@ -564,7 +598,7 @@ function updateBattleUI() {
 async function playerDraw() {
     if (gameState.gameOver) return;
 
-    if (gameState.myWall.length === 0) {
+    if ((gameState.myWall || []).length === 0) {
         checkDrawGame();
         return;
     }
@@ -573,7 +607,7 @@ async function playerDraw() {
     updateBattleUI();
     setDialogue(`ツモった！ 「${tileToString(gameState.drawnTile)}」`);
 
-    const canTsumo = checkWinningHand([...gameState.myHand, gameState.drawnTile], gameState.drawnTile);
+    const canTsumo = checkWinningHand([...(gameState.myHand || []), gameState.drawnTile], gameState.drawnTile);
     document.getElementById('tsumo-btn').disabled = !canTsumo;
     document.getElementById('ron-btn').disabled = true;
 }

@@ -320,7 +320,7 @@ function setupFirebaseListener() {
         updateBattleUI();
     });
 
-    roomRef.child('players').on('value', snapshot => {
+    roomRef.child('players').on('value', async snapshot => {
         const players = snapshot.val();
         if (!players) return;
 
@@ -329,12 +329,18 @@ function setupFirebaseListener() {
         const p2 = playerList.find(p => p.role === 2);
 
         if (p1 && p2 && p1.ready && p2.ready) {
-            // プレイヤー1が対局開始ステータスを更新する責任を持つ
-            if (gameState.myPlayerNum === 1) {
-                db.ref(`rooms/${gameState.roomId}/public`).update({
-                    status: 'playing',
-                    activePlayer: 1
-                });
+            try {
+                const publicSnap = await roomRef.child('public/status').once('value');
+                const currentStatus = publicSnap.val();
+
+                if (currentStatus !== 'playing') {
+                    await roomRef.child('public').update({
+                        status: 'playing',
+                        activePlayer: 1
+                    });
+                }
+            } catch (e) {
+                console.error("Error updating status to playing:", e);
             }
         }
     });
@@ -441,7 +447,7 @@ function updateBuilderUI() {
                 }
             });
             poolContainer.appendChild(el);
-        });
+        }
     }
 
     const confirmBtn = document.getElementById('confirm-deck-btn');

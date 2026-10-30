@@ -513,11 +513,23 @@ function createTileElement(tile, isBack = false, isSmall = false) {
     return el;
 }
 
-function startBattle() {
+async function startBattle() {
     if (gameState.gameMode === '1p') {
         const cpuDeck = generateShuffledDeck();
         gameState.oppHand = cpuDeck.slice(0, 13);
         gameState.oppWall = cpuDeck.slice(13, 30);
+    } else {
+        // オンラインモード: 構築フェーズでFirebaseに保存した自分のデータを復元
+        try {
+            const playerSnap = await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).once('value');
+            const playerData = playerSnap.val();
+            if (playerData) {
+                gameState.myHand = playerData.hand || [];
+                gameState.myWall = playerData.wall || [];
+            }
+        } catch (e) {
+            console.error("Error restoring deck data from Firebase:", e);
+        }
     }
 
     gameState.turn = 1;

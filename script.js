@@ -192,16 +192,30 @@ class NetworkManager {
         this.conn = null;
         this.onConnected = null;
         this.onMessage = null;
-        this.peer.on('open', id => { document.getElementById('my-peer-id').textContent = id; });
+        this.peer.on('open', id => {
+            const el = document.getElementById('my-peer-id');
+            if (el) el.textContent = id;
+        });
         this.peer.on('connection', conn => { this.conn = conn; this.setupConnection(); });
     }
     setupConnection() {
         this.conn.on('open', () => {
-            document.getElementById('connection-status').textContent = "接続完了！";
-            document.getElementById('connection-status').style.color = "#00ff00";
+            const statusEl = document.getElementById('connection-status');
+            if (statusEl) {
+                statusEl.textContent = "接続完了！";
+                statusEl.style.color = "#00ff00";
+            }
             if (this.onConnected) this.onConnected();
         });
         this.conn.on('data', data => { if (this.onMessage) this.onMessage(data); });
+        this.conn.on('error', err => {
+            console.error("Peer connection error:", err);
+            const statusEl = document.getElementById('connection-status');
+            if (statusEl) {
+                statusEl.textContent = "接続エラーが発生しました";
+                statusEl.style.color = "#ff0000";
+            }
+        });
     }
     connect(remoteId) { this.conn = this.peer.connect(remoteId); this.setupConnection(); }
     send(type, payload) { if (this.conn && this.conn.open) this.conn.send({ type, payload }); }
@@ -228,36 +242,52 @@ document.addEventListener('DOMContentLoaded', () => {
         privacy: document.getElementById('privacy-screen'),
         result: document.getElementById('result-modal')
     };
-    document.getElementById('connect-btn').addEventListener('click', () => {
-        const remoteId = document.getElementById('remote-peer-id').value;
-        if (remoteId) {
-            document.getElementById('connection-status').textContent = "接続中...";
-            network.connect(remoteId);
+
+    // 安全なイベント登録関数
+    const safeAddEventListener = (id, event, callback) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, callback);
+        else console.warn(`Element with ID ${id} not found.`);
+    };
+
+    safeAddEventListener('connect-btn', 'click', () => {
+        const remoteIdEl = document.getElementById('remote-peer-id');
+        if (remoteIdEl) {
+            const remoteId = remoteIdEl.value;
+            if (remoteId) {
+                const statusEl = document.getElementById('connection-status');
+                if (statusEl) statusEl.textContent = "接続中...";
+                network.connect(remoteId);
+            }
         }
     });
+
     network.onConnected = () => {
         gameState.gameMode = 'online';
         network.send('HELLO', { name: 'Player' });
     };
+
     network.onMessage = (data) => handleNetworkMessage(data);
-    document.getElementById('start-1p-btn').addEventListener('click', () => {
+
+    safeAddEventListener('start-1p-btn', 'click', () => {
         gameState.gameMode = '1p'; gameState.myPlayerNum = 1; initBuilder(); switchScreen('setup');
     });
-    document.getElementById('rules-btn').addEventListener('click', () => screens.rules.classList.add('active'));
-    document.getElementById('close-rules-btn').addEventListener('click', () => screens.rules.classList.remove('active'));
-    document.getElementById('clear-deck-btn').addEventListener('click', resetCurrentPoolAllocation);
-    document.getElementById('sort-pool-btn').addEventListener('click', sortCurrentPool);
-    document.getElementById('auto-distribute-btn').addEventListener('click', autoDistributeCurrentPlayer);
-    document.getElementById('mode-hand-btn').addEventListener('click', () => setBuilderMode('hand'));
-    document.getElementById('mode-wall-btn').addEventListener('click', () => setBuilderMode('wall'));
-    document.getElementById('confirm-deck-btn').addEventListener('click', handleDeckConfirm);
-    document.getElementById('privacy-ready-btn').addEventListener('click', handlePrivacyReady);
-    document.getElementById('draw-btn').addEventListener('click', playerDraw);
-    document.getElementById('ron-btn').addEventListener('click', playerRon);
-    document.getElementById('tsumo-btn').addEventListener('click', playerTsumo);
-    document.getElementById('next-match-btn').addEventListener('click', resetMatch);
-    document.getElementById('restart-game-btn').addEventListener('click', () => {
-        screens.result.classList.remove('active'); switchScreen('title');
+    safeAddEventListener('rules-btn', 'click', () => { if (screens.rules) screens.rules.classList.add('active'); });
+    safeAddEventListener('close-rules-btn', 'click', () => { if (screens.rules) screens.rules.classList.remove('active'); });
+    safeAddEventListener('clear-deck-btn', 'click', resetCurrentPoolAllocation);
+    safeAddEventListener('sort-pool-btn', 'click', sortCurrentPool);
+    safeAddEventListener('auto-distribute-btn', 'click', autoDistributeCurrentPlayer);
+    safeAddEventListener('mode-hand-btn', 'click', () => setBuilderMode('hand'));
+    safeAddEventListener('mode-wall-btn', 'click', () => setBuilderMode('wall'));
+    safeAddEventListener('confirm-deck-btn', 'click', handleDeckConfirm);
+    safeAddEventListener('privacy-ready-btn', 'click', handlePrivacyReady);
+    safeAddEventListener('draw-btn', 'click', playerDraw);
+    safeAddEventListener('ron-btn', 'click', playerRon);
+    safeAddEventListener('tsumo-btn', 'click', playerTsumo);
+    safeAddEventListener('next-match-btn', 'click', resetMatch);
+    safeAddEventListener('restart-game-btn', 'click', () => {
+        if (screens.result) screens.result.classList.remove('active');
+        switchScreen('title');
     });
 });
 
@@ -311,8 +341,9 @@ function initBuilder() {
 
 function setBuilderMode(mode) {
     gameState.builderMode = mode;
-    document.getElementById('mode-hand-btn').classList.toggle('active', mode === 'hand');
-    document.getElementById('mode-wall-btn').classList.toggle('active', mode === 'wall');
+    const hBtn = document.getElementById('mode-hand-btn'), wBtn = document.getElementById('mode-wall-btn');
+    if (hBtn) hBtn.classList.toggle('active', mode === 'hand');
+    if (wBtn) wBtn.classList.toggle('active', mode === 'wall');
 }
 
 function resetCurrentPoolAllocation() {
@@ -339,39 +370,47 @@ function autoDistributeCurrentPlayer() {
 
 function updateBuilderUI() {
     const pool = gameState.myPool, hand = gameState.myHand, wall = gameState.myWall;
-    document.getElementById('hand-count').textContent = hand.length;
-    document.getElementById('wall-count').textContent = wall.length;
-    document.getElementById('pool-count').textContent = pool.length;
+    const hCount = document.getElementById('hand-count'), wCount = document.getElementById('wall-count'), pCount = document.getElementById('pool-count');
+    if (hCount) hCount.textContent = hand.length;
+    if (wCount) wCount.textContent = wall.length;
+    if (pCount) pCount.textContent = pool.length;
     const handContainer = document.getElementById('setup-hand-tiles');
-    handContainer.innerHTML = '';
-    hand.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        handContainer.appendChild(el);
-    });
-    const wallContainer = document.getElementById('setup-wall-tiles');
-    wallContainer.innerHTML = '';
-    wall.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        wallContainer.appendChild(el);
-    });
-    const poolContainer = document.getElementById('tile-pool');
-    poolContainer.innerHTML = '';
-    pool.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => {
-            if (gameState.builderMode === 'hand' && hand.length < 13) {
-                pool.splice(idx, 1); hand.push(t);
-                if (hand.length === 13) setBuilderMode('wall');
-            } else if (gameState.builderMode === 'wall' && wall.length < 17) {
-                pool.splice(idx, 1); wall.push(t);
-            }
-            updateBuilderUI();
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        hand.forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            handContainer.appendChild(el);
         });
-        poolContainer.appendChild(el);
-    });
-    document.getElementById('confirm-deck-btn').disabled = !(hand.length === 13 && wall.length === 17);
+    }
+    const wallContainer = document.getElementById('setup-wall-tiles');
+    if (wallContainer) {
+        wallContainer.innerHTML = '';
+        wall.forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            wallContainer.appendChild(el);
+        });
+    }
+    const poolContainer = document.getElementById('tile-pool');
+    if (poolContainer) {
+        poolContainer.innerHTML = '';
+        pool.forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => {
+                if (gameState.builderMode === 'hand' && hand.length < 13) {
+                    pool.splice(idx, 1); hand.push(t);
+                    if (hand.length === 13) setBuilderMode('wall');
+                } else if (gameState.builderMode === 'wall' && wall.length < 17) {
+                    pool.splice(idx, 1); wall.push(t);
+                }
+                updateBuilderUI();
+            });
+            poolContainer.appendChild(el);
+        });
+    }
+    const confirmBtn = document.getElementById('confirm-deck-btn');
+    if (confirmBtn) confirmBtn.disabled = !(hand.length === 13 && wall.length === 17);
 }
 
 function handleDeckConfirm() {
@@ -381,7 +420,8 @@ function handleDeckConfirm() {
             network.send('START_BATTLE', {});
         } else {
             setDialogue("相手の構築完了を待っています…");
-            document.getElementById('confirm-deck-btn').disabled = true;
+            const btn = document.getElementById('confirm-deck-btn');
+            if (btn) btn.disabled = true;
         }
     } else {
         startBattle();
@@ -389,14 +429,15 @@ function handleDeckConfirm() {
 }
 
 function showPrivacyModal(title, msg, onReady) {
-    document.getElementById('privacy-title').textContent = title;
-    document.getElementById('privacy-msg').textContent = msg;
-    screens.privacy.classList.add('active');
+    const tEl = document.getElementById('privacy-title'), mEl = document.getElementById('privacy-msg');
+    if (tEl) tEl.textContent = title;
+    if (mEl) mEl.textContent = msg;
+    if (screens.privacy) screens.privacy.classList.add('active');
     gameState.pendingAction = onReady;
 }
 
 function handlePrivacyReady() {
-    screens.privacy.classList.remove('active');
+    if (screens.privacy) screens.privacy.classList.remove('active');
     if (gameState.pendingAction) {
         const action = gameState.pendingAction;
         gameState.pendingAction = null;
@@ -430,11 +471,10 @@ function beginBattleScreen() {
     updateBattleUI();
     setDialogue("対局開始……！ 運命の17歩が始まる…！");
     triggerZawa();
-    if (gameState.myPlayerNum === 1) {
-        document.getElementById('draw-btn').disabled = false;
-    } else {
+    const drawBtn = document.getElementById('draw-btn');
+    if (drawBtn) drawBtn.disabled = (gameState.myPlayerNum !== 1);
+    if (gameState.myPlayerNum !== 1) {
         setDialogue("相手（プレイヤー1）のターンです…");
-        document.getElementById('draw-btn').disabled = true;
     }
 }
 
@@ -453,10 +493,10 @@ function setDialogue(text) {
 
 function updateBattleUI() {
     const isMyTurn = (gameState.activePlayer === gameState.myPlayerNum);
-    document.getElementById('round-display').textContent = `第${gameState.round}局`;
-    document.getElementById('turn-display').textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
-    const waitContainer = document.getElementById('p1-wait-container');
-    const waitText = document.getElementById('p1-wait-tiles');
+    const rDisp = document.getElementById('round-display'), tDisp = document.getElementById('turn-display');
+    if (rDisp) rDisp.textContent = `第${gameState.round}局`;
+    if (tDisp) tDisp.textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
+    const waitContainer = document.getElementById('p1-wait-container'), waitText = document.getElementById('p1-wait-tiles');
     if (waitContainer && waitText) {
         waitContainer.innerHTML = '';
         if (gameState.drawnTile) {
@@ -475,22 +515,30 @@ function updateBattleUI() {
         }
     }
     const handContainer = document.getElementById('p1-hand-container');
-    handContainer.innerHTML = '';
-    gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
-    if (gameState.drawnTile) {
-        const drawnEl = createTileElement(gameState.drawnTile);
-        drawnEl.style.border = '2px solid #ffd700';
-        handContainer.appendChild(drawnEl);
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
+        if (gameState.drawnTile) {
+            const drawnEl = createTileElement(gameState.drawnTile);
+            drawnEl.style.border = '2px solid #ffd700';
+            handContainer.appendChild(drawnEl);
+        }
     }
     const myRiverEl = document.getElementById('p1-river-container');
-    myRiverEl.innerHTML = '';
-    gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    if (myRiverEl) {
+        myRiverEl.innerHTML = '';
+        gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    }
     const oppRiverEl = document.getElementById('p2-river-container');
-    oppRiverEl.innerHTML = '';
-    gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
-    document.getElementById('p1-wall-count').textContent = gameState.myWall.length;
-    document.getElementById('p2-wall-count').textContent = gameState.oppWallCount;
-    document.getElementById('draw-btn').disabled = !isMyTurn || gameState.drawnTile !== null;
+    if (oppRiverEl) {
+        oppRiverEl.innerHTML = '';
+        gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+    }
+    const p1wCount = document.getElementById('p1-wall-count'), p2wCount = document.getElementById('p2-wall-count');
+    if (p1wCount) p1wCount.textContent = gameState.myWall.length;
+    if (p2wCount) p2wCount.textContent = gameState.oppWallCount;
+    const drawBtn = document.getElementById('draw-btn');
+    if (drawBtn) drawBtn.disabled = !isMyTurn || gameState.drawnTile !== null;
 }
 
 function playerDraw() {
@@ -503,8 +551,9 @@ function playerDraw() {
     updateBattleUI();
     setDialogue(`ツモった！ 「${tileToString(gameState.drawnTile)}」`);
     const canTsumo = checkWinningHand([...gameState.myHand, gameState.drawnTile], gameState.drawnTile);
-    document.getElementById('tsumo-btn').disabled = !canTsumo;
-    document.getElementById('ron-btn').disabled = true;
+    const tBtn = document.getElementById('tsumo-btn'), rBtn = document.getElementById('ron-btn');
+    if (tBtn) tBtn.disabled = !canTsumo;
+    if (rBtn) rBtn.disabled = true;
     if (gameState.gameMode === 'online') {
         network.send('TSUMO_SIGNAL', { playerId: gameState.myPlayerNum });
     }
@@ -577,9 +626,10 @@ function checkDrawGame() {
 
 function endGame(winnerNum, message) {
     gameState.gameOver = true;
-    document.getElementById('draw-btn').disabled = true;
-    document.getElementById('ron-btn').disabled = true;
-    document.getElementById('tsumo-btn').disabled = true;
+    const dBtn = document.getElementById('draw-btn'), rBtn = document.getElementById('ron-btn'), tBtn = document.getElementById('tsumo-btn');
+    if (dBtn) dBtn.disabled = true;
+    if (rBtn) rBtn.disabled = true;
+    if (tBtn) tBtn.disabled = true;
     if (winnerNum !== 0 && gameState.currentYaku) {
         const cutinEl = document.getElementById('yaku-cutin');
         if (cutinEl) {
@@ -594,24 +644,20 @@ function endGame(winnerNum, message) {
 
 function showFinalResult(winnerNum, message) {
     const resultModal = screens.result;
-    const titleEl = document.getElementById('result-title');
-    const msgEl = document.getElementById('result-message');
+    const titleEl = document.getElementById('result-title'), msgEl = document.getElementById('result-message');
     if (winnerNum === gameState.myPlayerNum) {
-        titleEl.textContent = "勝利 (VICTORY)";
-        titleEl.style.color = "#ffd700";
+        if (titleEl) { titleEl.textContent = "勝利 (VICTORY)"; titleEl.style.color = "#ffd700"; }
     } else if (winnerNum === 0) {
-        titleEl.textContent = "流局 (DRAW)";
-        titleEl.style.color = "#9e9cb0";
+        if (titleEl) { titleEl.textContent = "流局 (DRAW)"; titleEl.style.color = "#9e9cb0"; }
     } else {
-        titleEl.textContent = "敗北 (DEFEAT)";
-        titleEl.style.color = "#b31414";
+        if (titleEl) { titleEl.textContent = "敗北 (DEFEAT)"; titleEl.style.color = "#b31414"; }
     }
-    msgEl.textContent = message;
-    resultModal.classList.add('active');
+    if (msgEl) msgEl.textContent = message;
+    if (resultModal) resultModal.classList.add('active');
 }
 
 function resetMatch() {
-    screens.result.classList.remove('active');
+    if (screens.result) screens.result.classList.remove('active');
     gameState.round++;
     startBattle();
 }

@@ -3,38 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>逆境無頼カイジ - 17歩 (Jūnana-Ho) Simulator</title>
+    <title>逆境無頼カイジ - 17歩 ONLINE</title>
     <link rel="stylesheet" href="style.css">
+    <!-- PeerJS ライブラリを追加 -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        /* オンライン接続UI用の簡易スタイル */
+        .online-setup {
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #ffd700;
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 400px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+        }
+        .id-display { margin-bottom: 15px; font-size: 1.1rem; }
+        #my-peer-id { color: #ffd700; font-family: monospace; font-size: 1.2rem; }
+        .connect-box { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
+        .connect-box input { padding: 10px; border-radius: 5px; border: none; width: 60%; }
+        .status-text { font-size: 0.9rem; margin-top: 5px; }
+    </style>
 </head>
 <body>
     <div id="game-container">
         <!-- Title Screen -->
         <div id="title-screen" class="screen active">
             <div class="zawa-bg">ざわ… ざわ…</div>
-            <h1 class="game-title"><span>奇跡のゲーム</span><br>１７歩 <span class="sub-title">JŪNANA-HO</span></h1>
-            <p class="subtitle-desc">命を賭けた究極の麻雀勝負——全17巡の心理戦</p>
+            <h1 class="game-title"><span>奇跡のゲーム</span><br>１７歩 <span class="sub-title">ONLINE</span></h1>
+            <p class="subtitle-desc">命を賭けた究極の麻雀勝負——オンライン対戦</p>
+
+            <!-- オンライン接続UI -->
+            <div class="online-setup">
+                <div class="id-display">
+                    <span>あなたのID: </span><strong id="my-peer-id">接続中...</strong>
+                </div>
+                <div class="connect-box">
+                    <input type="text" id="remote-peer-id" placeholder="相手のIDを入力してください">
+                    <button id="connect-btn" class="kaiji-btn secondary">接続する</button>
+                </div>
+                <div id="connection-status" class="status-text">未接続</div>
+            </div>
+
             <div class="menu-buttons">
                 <button id="start-1p-btn" class="kaiji-btn">1P vs 村上 (CPU)</button>
-                <button id="start-2p-btn" class="kaiji-btn secondary">2P対戦 (友達と勝負)</button>
                 <button id="rules-btn" class="kaiji-btn secondary">ルール説明 (RULES)</button>
             </div>
             <div class="author-credit">原作：福本伸行「賭博黙示録カイジ」</div>
         </div>
 
-        <!-- Rules Modal / Screen -->
+        <!-- Rules Modal -->
         <div id="rules-modal" class="modal">
             <div class="modal-content">
                 <h2>１７歩（じゅうななほ）ルール</h2>
                 <ul>
                     <li><strong>基本概要：</strong> 2人打ちの麻雀勝負。ランダムに配られた30枚の持ち牌プールから、手牌（13枚）と17巡分の山（17枚）を構築します。</li>
                     <li><strong>公正な配牌：</strong> 麻雀の牌山からランダムに30枚が配分されるため、同じ牌が5枚以上存在するなどの不正や偏りは一切ありません。</li>
-                    <li><strong>2P対戦モード：</strong> 同じ端末を交互に持って遊ぶ「パス＆プレイ」対応。お互いに手牌と山を隠して真剣勝負！</li>
+                    <li><strong>オンライン対戦：</strong> IDを共有して接続し、互いの手牌を隠したまま真剣勝負！</li>
                 </ul>
                 <button id="close-rules-btn" class="kaiji-btn">閉じる</button>
             </div>
         </div>
 
-        <!-- Privacy Interstitial Screen (for 2P mode) -->
+        <!-- Privacy Screen -->
         <div id="privacy-screen" class="modal">
             <div class="modal-content text-center">
                 <h2 id="privacy-title">手番交代</h2>
@@ -43,7 +75,7 @@
             </div>
         </div>
 
-        <!-- Deck/Hand Setup Screen -->
+        <!-- Setup Screen -->
         <div id="setup-screen" class="screen">
             <header class="game-header">
                 <h2 id="setup-header-title">牌構築フェーズ (DECK SETUP)</h2>
@@ -64,7 +96,6 @@
                         <button id="mode-wall-btn" class="mode-btn">山に置く (<span id="wall-count">0</span>/17)</button>
                     </div>
                 </div>
-
                 <div class="deck-workspace">
                     <div class="builder-preview-area">
                         <div class="preview-box">
@@ -76,13 +107,11 @@
                             <div id="setup-wall-tiles" class="tile-row"></div>
                         </div>
                     </div>
-
                     <div class="tile-bank-area">
                         <h4 id="pool-title">あなたの配牌プール (残り <span id="pool-count">30</span>枚) [クリックして手牌/山に追加]</h4>
                         <div id="tile-pool" class="tile-grid-bank"></div>
                     </div>
                 </div>
-
                 <div class="setup-actions">
                     <button id="confirm-deck-btn" class="kaiji-btn" disabled>構築完了 (CONFIRM)</button>
                 </div>
@@ -94,10 +123,9 @@
             <div id="zawa-overlay" class="zawa-overlay">ざわ… ざわ…</div>
             <div id="yaku-cutin" class="yaku-cutin"></div>
             <div id="final-turn-overlay" class="final-turn-overlay"></div>
-
             <div class="battle-header">
                 <div class="player-info opponent-info">
-                    <span class="name" id="p2-name">対戦相手：村上（帝愛グループ）</span>
+                    <span class="name" id="p2-name">対戦相手</span>
                     <span class="points" id="p2-points">持点: 25,000点</span>
                     <span class="debt" id="p2-debt">借金: ¥0</span>
                 </div>
@@ -106,12 +134,11 @@
                     <span id="turn-display">1 / 17 巡目</span>
                 </div>
                 <div class="player-info user-info">
-                    <span class="name" id="p1-name">伊藤 開示 (あなた)</span>
+                    <span class="name" id="p1-name">あなた</span>
                     <span class="points" id="p1-points">持点: 25,000点</span>
                     <span class="debt" id="p1-debt">借金: ¥0</span>
                 </div>
             </div>
-
             <div class="board-arena">
                 <div class="opponent-area side-area">
                     <div class="opponent-hand">
@@ -126,7 +153,6 @@
                         <div id="p2-river-container" class="tile-grid"></div>
                     </div>
                 </div>
-
                 <div class="center-stage">
                     <div id="kaiji-dialogue" class="dialogue-box">
                         <p id="dialogue-text"><span>「勝たなきゃダメだ…！勝たなくちゃ…！！」</span></p>
@@ -137,7 +163,6 @@
                         <button id="tsumo-btn" class="action-btn tsumo" disabled>ツモ和了 (TSUMO)</button>
                     </div>
                 </div>
-
                 <div class="user-area side-area">
                     <div class="user-river">
                         <div class="label">自分の河（捨て牌）</div>
@@ -159,13 +184,13 @@
             </div>
         </div>
 
-        <!-- Result Modal / Screen -->
+        <!-- Result Modal -->
         <div id="result-modal" class="modal">
             <div class="modal-content result-content">
                 <h2 id="result-title">勝負決着</h2>
-                <p id="result-message">見事勝利した！</p>
+                <p id="result-message">結果が表示されます</p>
                 <div class="result-stats">
-                    <div id="score-change">点数移動: +8000点</div>
+                    <div id="score-change">点数移動</div>
                 </div>
                 <div class="result-actions">
                     <button id="next-match-btn" class="kaiji-btn">次の勝負へ</button>
@@ -174,7 +199,6 @@
             </div>
         </div>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>

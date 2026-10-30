@@ -305,6 +305,10 @@ function setupFirebaseListener() {
         const data = snapshot.val();
         if (!data) return;
 
+        if (data.status === 'playing' && screens.setup && screens.setup.classList.contains('active')) {
+            startBattle();
+        }
+
         gameState.activePlayer = data.activePlayer;
         gameState.turn = data.turn;
         gameState.round = data.round;
@@ -325,8 +329,12 @@ function setupFirebaseListener() {
         const p2 = playerList.find(p => p.role === 2);
 
         if (p1 && p2 && p1.ready && p2.ready) {
-            if (screens.setup && screens.setup.classList.contains('active')) {
-                startBattle();
+            // プレイヤー1が対局開始ステータスを更新する責任を持つ
+            if (gameState.myPlayerNum === 1) {
+                db.ref(`rooms/${gameState.roomId}/public`).update({
+                    status: 'playing',
+                    activePlayer: 1
+                });
             }
         }
     });
@@ -442,8 +450,11 @@ function updateBuilderUI() {
 
 async function handleDeckConfirm() {
     if (gameState.gameMode === 'online') {
+        // 構築した手牌と山をFirebaseに保存
         await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).update({
-            ready: true
+            ready: true,
+            hand: gameState.myHand,
+            wall: gameState.myWall
         });
         setDialogue("構築完了！相手の準備を待っています…");
         document.getElementById('confirm-deck-btn').disabled = true;

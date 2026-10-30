@@ -529,7 +529,8 @@ function updateBattleUI() {
         if (gameState.drawnTile) {
             waitText.textContent = "ツモ中...";
         } else {
-            const waitingTiles = evaluator.getWaitingTiles(gameState.myHand || []);
+            const currentHand = gameState.myHand || [];
+            const waitingTiles = evaluator.getWaitingTiles(currentHand);
             if (waitingTiles.length > 0) {
                 waitText.textContent = "テンパイ！";
                 waitingTiles.forEach(tileStr => {
@@ -545,10 +546,14 @@ function updateBattleUI() {
     const handContainer = document.getElementById('p1-hand-container');
     if (handContainer) {
         handContainer.innerHTML = '';
-        (gameState.myHand || []).forEach(t => handContainer.appendChild(createTileElement(t)));
+        const currentHand = gameState.myHand || [];
+        currentHand.forEach(t => handContainer.appendChild(createTileElement(t)));
         if (gameState.drawnTile) {
             const drawnEl = createTileElement(gameState.drawnTile);
             drawnEl.style.border = '2px solid #ffd700';
+            drawnEl.style.cursor = 'pointer';
+            drawnEl.title = 'クリックして捨てる (自摸切り)';
+            drawnEl.addEventListener('click', () => playerDiscard(gameState.drawnTile));
             handContainer.appendChild(drawnEl);
         }
     }
@@ -556,13 +561,15 @@ function updateBattleUI() {
     const myRiverEl = document.getElementById('p1-river-container');
     if (myRiverEl) {
         myRiverEl.innerHTML = '';
-        (gameState.myRiver || []).forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+        const myRiver = gameState.myRiver || [];
+        myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
     }
 
     const oppRiverEl = document.getElementById('p2-river-container');
     if (oppRiverEl) {
         oppRiverEl.innerHTML = '';
-        (gameState.oppRiver || []).forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+        const oppRiver = gameState.oppRiver || [];
+        oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
     }
 
     document.getElementById('p1-wall-count').textContent = (gameState.myWall || []).length;

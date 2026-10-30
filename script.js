@@ -243,11 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
         result: document.getElementById('result-modal')
     };
 
-    // 安全なイベント登録関数
     const safeAddEventListener = (id, event, callback) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener(event, callback);
-        else console.warn(`Element with ID ${id} not found.`);
     };
 
     safeAddEventListener('connect-btn', 'click', () => {
@@ -264,7 +262,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     network.onConnected = () => {
         gameState.gameMode = 'online';
-        network.send('HELLO', { name: 'Player' });
+        // 自分が接続をリクエストした側（ゲスト）か、受けた側（ホスト）か判定
+        if (network.conn.peer === network.peer.id) {
+            // 自分がホスト
+            gameState.myPlayerNum = 1;
+            gameState.oppPlayerNum = 2;
+            initBuilder();
+            switchScreen('setup');
+        } else {
+            // 自分がゲスト
+            gameState.myPlayerNum = 2;
+            gameState.oppPlayerNum = 1;
+            network.send('HELLO_GUEST', { name: 'Player 2' });
+            initBuilder();
+            switchScreen('setup');
+        }
     };
 
     network.onMessage = (data) => handleNetworkMessage(data);
@@ -294,23 +306,12 @@ document.addEventListener('DOMContentLoaded', () => {
 function handleNetworkMessage(data) {
     const { type, payload } = data;
     switch(type) {
-        case 'HELLO':
-            if (gameState.myPlayerNum === 1) {
-                gameState.myPlayerNum = 2; gameState.oppPlayerNum = 1;
-                network.send('ROLE_CONFIRM', { role: 2 });
-            } else {
-                network.send('ROLE_CONFIRM', { role: 1 });
-            }
+        case 'HELLO_GUEST':
+            gameState.myPlayerNum = 1;
+            gameState.oppPlayerNum = 2;
+            initBuilder();
+            switchScreen('setup');
             break;
-        case 'ROLE_CONFIRM':
-            if (payload.role === 1) {
-                gameState.myPlayerNum = 1; gameState.oppPlayerNum = 2;
-                initBuilder(); switchScreen('setup');
-            } else {
-                gameState.myPlayerNum = 2; gameState.oppPlayerNum = 1;
-            }
-            break;
-        case 'START_BUILDING': initBuilder(); switchScreen('setup'); break;
         case 'BUILD_COMPLETE':
             if (gameState.myPlayerNum === 1) {
                 showPrivacyModal("相手の構築完了", "相手が牌を組み上げました。あなたも構築を完了させてください。", null);

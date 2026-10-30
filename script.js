@@ -15,17 +15,21 @@ const firebaseConfig = {
   measurementId: "G-SFHCYM4L0R"
 };
 
+// ルームIDを最優先で生成（DOM読み込みを待たずに確定させる）
+const GLOBAL_RANDOM_ROOM_ID = Math.random().toString(36).substr(2, 6).toUpperCase();
+
 // Firebaseの初期化を安全に行う
 let db = null;
 try {
     if (typeof firebase !== 'undefined') {
         firebase.initializeApp(firebaseConfig);
         db = firebase.database();
+        console.log("Firebase initialized successfully.");
     } else {
-        console.error("Firebase SDK not loaded. Please check your internet connection or CDN links.");
+        console.error("Firebase SDK not found. Please check the script tags in index.html.");
     }
 } catch (e) {
-    console.error("Firebase Initialization Error:", e);
+    console.error("Firebase Init Error:", e);
 }
 
 // --- Utilities ---
@@ -224,14 +228,15 @@ let screens = {};
 const evaluator = new MahjongEvaluator();
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. まずルームIDを生成して表示する (Firebase接続に関わらず実行)
-    const randomRoomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+    console.log("DOM Loaded. Initializing UI...");
+
+    // ルームIDの表示
     const roomIdEl = document.getElementById('my-room-id');
     if (roomIdEl) {
-        roomIdEl.textContent = randomRoomId;
+        roomIdEl.textContent = GLOBAL_RANDOM_ROOM_ID;
     }
 
-    // 2. 画面要素のキャッシュ
+    // 画面要素の安全なキャッシュ
     screens = {
         title: document.getElementById('title-screen'),
         setup: document.getElementById('setup-screen'),
@@ -241,43 +246,51 @@ document.addEventListener('DOMContentLoaded', () => {
         result: document.getElementById('result-modal')
     };
 
-    // 3. イベントリスナーの登録
-    document.getElementById('join-room-btn').addEventListener('click', joinRoom);
-    document.getElementById('start-1p-btn').addEventListener('click', () => {
+    // イベントリスナーの登録 (安全なバインド)
+    const bind = (id, fn) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', fn);
+    };
+
+    bind('join-room-btn', joinRoom);
+    bind('start-1p-btn', () => {
         gameState.gameMode = '1p'; gameState.myPlayerNum = 1; initBuilder(); switchScreen('setup');
     });
-    document.getElementById('rules-btn').addEventListener('click', () => screens.rules.classList.add('active'));
-    document.getElementById('close-rules-btn').addEventListener('click', () => screens.rules.classList.remove('active'));
-    document.getElementById('clear-deck-btn').addEventListener('click', resetCurrentPoolAllocation);
-    document.getElementById('sort-pool-btn').addEventListener('click', sortCurrentPool);
-    document.getElementById('auto-distribute-btn').addEventListener('click', autoDistributeCurrentPlayer);
-    document.getElementById('mode-hand-btn').addEventListener('click', () => setBuilderMode('hand'));
-    document.getElementById('mode-wall-btn').addEventListener('click', () => setBuilderMode('wall'));
-    document.getElementById('confirm-deck-btn').addEventListener('click', handleDeckConfirm);
-    document.getElementById('privacy-ready-btn').addEventListener('click', handlePrivacyReady);
-    document.getElementById('draw-btn').addEventListener('click', playerDraw);
-    document.getElementById('ron-btn').addEventListener('click', playerRon);
-    document.getElementById('tsumo-btn').addEventListener('click', playerTsumo);
-    document.getElementById('next-match-btn').addEventListener('click', resetMatch);
-    document.getElementById('restart-game-btn').addEventListener('click', () => {
+    bind('rules-btn', () => { if(screens.rules) screens.rules.classList.add('active'); });
+    bind('close-rules-btn', () => { if(screens.rules) screens.rules.classList.remove('active'); });
+    bind('clear-deck-btn', resetCurrentPoolAllocation);
+    bind('sort-pool-btn', sortCurrentPool);
+    bind('auto-distribute-btn', autoDistributeCurrentPlayer);
+    bind('mode-hand-btn', () => setBuilderMode('hand'));
+    bind('mode-wall-btn', () => setBuilderMode('wall'));
+    bind('confirm-deck-btn', handleDeckConfirm);
+    bind('privacy-ready-btn', handlePrivacyReady);
+    bind('draw-btn', playerDraw);
+    bind('ron-btn', playerRon);
+    bind('tsumo-btn', playerTsumo);
+    bind('next-match-btn', resetMatch);
+    bind('restart-game-btn', () => {
         if (screens.result) screens.result.classList.remove('active');
         switchScreen('title');
     });
+    console.log("UI Binding complete.");
 });
 
 async function joinRoom() {
     if (!db) {
-        alert("Firebase の接続に失敗しています。ページをリロードして再度お試しください。");
+        alert("Firebase の接続に失敗しています。ページをリロードしてください。");
         return;
     }
-    const roomIDInput = document.getElementById('remote-room-id').value.toUpperCase();
-    if (!roomIDInput) return;
+    const roomInput = document.getElementById('remote-room-id');
+    if (!roomInput) return;
+    const roomID = roomInput.value.toUpperCase();
+    if (!roomID) return;
 
     const statusEl = document.getElementById('connection-status');
-    statusEl.textContent = "接続中...";
+    if (statusEl) statusEl.textContent = "接続中...";
 
     gameState.gameMode = 'online';
-    gameState.roomId = roomIDInput;
+    gameState.roomId = roomID;
     gameState.userId = 'user_' + Math.random().toString(36).substr(2, 9);
 
     const roomRef = db.ref('rooms/' + gameState.roomId);
@@ -289,29 +302,15 @@ async function joinRoom() {
             gameState.myPlayerNum = 1;
             gameState.oppPlayerNum = 2;
             await roomRef.set({
-                public: {
-                    status: 'waiting',
-                    activePlayer: 1,
-                    turn: 1,
-                    round: 1,
-                    p1River: [],
-                    p2River: [],
-                    p1Points: 25000,
-                    p2Points: 25000,
-                    gameOver: false
-                },
-                players: {
-                    [gameState.userId]: { role: 1, ready: false }
-                }
+                public: { status: 'waiting', activePlayer: 1, turn: 1, round: 1, p1River: [], p2River: [], p1Points: 25000, p2Points: 25000, gameOver: false },
+                players: { [gameState.userId]: { role: 1, ready: false } }
             });
-            statusEl.textContent = "ルーム作成完了！相手を待っています...";
+            if (statusEl) statusEl.textContent = "ルーム作成完了！相手を待っています...";
         } else {
             gameState.myPlayerNum = 2;
             gameState.oppPlayerNum = 1;
-            await roomRef.child('players').update({
-                [gameState.userId]: { role: 2, ready: false }
-            });
-            statusEl.textContent = "ルームに参加しました！";
+            await roomRef.child('players').update({ [gameState.userId]: { role: 2, ready: false } });
+            if (statusEl) statusEl.textContent = "ルームに参加しました！";
         }
 
         setupFirebaseListener();
@@ -319,7 +318,7 @@ async function joinRoom() {
         switchScreen('setup');
     } catch (e) {
         console.error("joinRoom Error:", e);
-        statusEl.textContent = "接続エラーが発生しました。";
+        if (statusEl) statusEl.textContent = "接続エラーが発生しました。";
     }
 }
 
@@ -350,17 +349,10 @@ function setupFirebaseListener() {
             const pList = Object.values(players);
             if (pList.length === 2 && pList.every(p => p.ready)) {
                 if (data.status !== 'playing') {
-                    await roomRef.child('public').update({
-                        status: 'playing',
-                        activePlayer: 1
-                    });
+                    await roomRef.child('public').update({ status: 'playing', activePlayer: 1 });
                 }
             }
         }
-    });
-
-    roomRef.child('players').on('value', snapshot => {
-        // public リスナー側で判定を行うため、ここでは特に何もしない
     });
 }
 
@@ -392,8 +384,10 @@ function initBuilder() {
 
 function setBuilderMode(mode) {
     gameState.builderMode = mode;
-    document.getElementById('mode-hand-btn').classList.toggle('active', mode === 'hand');
-    document.getElementById('mode-wall-btn').classList.toggle('active', mode === 'wall');
+    const hBtn = document.getElementById('mode-hand-btn');
+    const wBtn = document.getElementById('mode-wall-btn');
+    if (hBtn) hBtn.classList.toggle('active', mode === 'hand');
+    if (wBtn) wBtn.classList.toggle('active', mode === 'wall');
 }
 
 function resetCurrentPoolAllocation() {
@@ -425,33 +419,36 @@ function updateBuilderUI() {
     const hand = gameState.myHand;
     const wall = gameState.myWall;
 
-    document.getElementById('hand-count').textContent = (hand || []).length;
-    document.getElementById('wall-count').textContent = (wall || []).length;
-    document.getElementById('pool-count').textContent = (pool || []).length;
+    const hCount = document.getElementById('hand-count');
+    if (hCount) hCount.textContent = (hand || []).length;
+    const wCount = document.getElementById('wall-count');
+    if (wCount) wCount.textContent = (wall || []).length;
+    const pCount = document.getElementById('pool-count');
+    if (pCount) pCount.textContent = (pool || []).length;
 
-    const handContainer = document.getElementById('setup-hand-tiles');
-    if (handContainer) {
-        handContainer.innerHTML = '';
+    const hCont = document.getElementById('setup-hand-tiles');
+    if (hCont) {
+        hCont.innerHTML = '';
         (hand || []).forEach((t, idx) => {
             const el = createTileElement(t);
             el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-            handContainer.appendChild(el);
+            hCont.appendChild(el);
         });
     }
 
-    const wallContainer = document.getElementById('setup-wall-tiles');
-    if (wallContainer) {
-        wallContainer.innerHTML = '';
+    const wCont = document.getElementById('setup-wall-tiles');
+    if (wCont) {
+        wCont.innerHTML = '';
         (wall || []).forEach((t, idx) => {
             const el = createTileElement(t);
             el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-            wallContainer.appendChild(el);
+            wCont.appendChild(el);
         });
     }
 
-    const poolContainer = document.getElementById('tile-pool');
-    if (poolContainer) {
-        poolContainer.innerHTML = '';
+    const pCont = document.getElementById('tile-pool');
+    if (pCont) {
+        pCont.innerHTML = '';
         (pool || []).forEach((t, idx) => {
             const el = createTileElement(t);
             el.addEventListener('click', () => {
@@ -464,38 +461,40 @@ function updateBuilderUI() {
                     updateBuilderUI();
                 }
             });
-            poolContainer.appendChild(el);
-        }
+            pCont.appendChild(el);
+        });
     }
 
-    const confirmBtn = document.getElementById('confirm-deck-btn');
-    if (confirmBtn) confirmBtn.disabled = !((hand || []).length === 13 && (wall || []).length === 17);
+    const cBtn = document.getElementById('confirm-deck-btn');
+    if (cBtn) cBtn.disabled = !((hand || []).length === 13 && (wall || []).length === 17);
 }
 
 async function handleDeckConfirm() {
     if (gameState.gameMode === 'online') {
-        // 構築した手牌と山をFirebaseに保存
         await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).update({
             ready: true,
             hand: gameState.myHand,
             wall: gameState.myWall
         });
         setDialogue("構築完了！相手の準備を待っています…");
-        document.getElementById('confirm-deck-btn').disabled = true;
+        const btn = document.getElementById('confirm-deck-btn');
+        if (btn) btn.disabled = true;
     } else {
         startBattle();
     }
 }
 
 function showPrivacyModal(title, msg, onReady) {
-    document.getElementById('privacy-title').textContent = title;
-    document.getElementById('privacy-msg').textContent = msg;
-    screens.privacy.classList.add('active');
+    const tEl = document.getElementById('privacy-title');
+    const mEl = document.getElementById('privacy-msg');
+    if (tEl) tEl.textContent = title;
+    if (mEl) mEl.textContent = msg;
+    if (screens.privacy) screens.privacy.classList.add('active');
     gameState.pendingAction = onReady;
 }
 
 function handlePrivacyReady() {
-    screens.privacy.classList.remove('active');
+    if (screens.privacy) screens.privacy.classList.remove('active');
     if (gameState.pendingAction) {
         const action = gameState.pendingAction;
         gameState.pendingAction = null;
@@ -519,7 +518,6 @@ async function startBattle() {
         gameState.oppHand = cpuDeck.slice(0, 13);
         gameState.oppWall = cpuDeck.slice(13, 30);
     } else {
-        // オンラインモード: 構築フェーズでFirebaseに保存した自分のデータを復元
         try {
             const playerSnap = await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).once('value');
             const playerData = playerSnap.val();
@@ -528,7 +526,7 @@ async function startBattle() {
                 gameState.myWall = playerData.wall || [];
             }
         } catch (e) {
-            console.error("Error restoring deck data from Firebase:", e);
+            console.error("Error restoring deck data:", e);
         }
     }
 
@@ -566,13 +564,15 @@ function setDialogue(text) {
 function updateBattleUI() {
     const isMyTurn = (gameState.activePlayer === gameState.myPlayerNum);
 
-    document.getElementById('round-display').textContent = `第${gameState.round}局`;
-    document.getElementById('turn-display').textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
+    const rDisp = document.getElementById('round-display');
+    if (rDisp) rDisp.textContent = `第${gameState.round}局`;
+    const tDisp = document.getElementById('turn-display');
+    if (tDisp) tDisp.textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
 
-    const waitContainer = document.getElementById('p1-wait-container');
+    const waitCont = document.getElementById('p1-wait-container');
     const waitText = document.getElementById('p1-wait-tiles');
-    if (waitContainer && waitText) {
-        waitContainer.innerHTML = '';
+    if (waitCont && waitText) {
+        waitCont.innerHTML = '';
         if (gameState.drawnTile) {
             waitText.textContent = "ツモ中...";
         } else {
@@ -582,7 +582,7 @@ function updateBattleUI() {
                 waitText.textContent = "テンパイ！";
                 waitingTiles.forEach(tileStr => {
                     const tileObj = { suit: tileStr[0], val: parseInt(tileStr.slice(1)) };
-                    waitContainer.appendChild(createTileElement(tileObj, false, true));
+                    waitCont.appendChild(createTileElement(tileObj, false, true));
                 });
             } else {
                 waitText.textContent = "なし";
@@ -590,39 +590,42 @@ function updateBattleUI() {
         }
     }
 
-    const handContainer = document.getElementById('p1-hand-container');
-    if (handContainer) {
-        handContainer.innerHTML = '';
+    const hCont = document.getElementById('p1-hand-container');
+    if (hCont) {
+        hCont.innerHTML = '';
         const currentHand = gameState.myHand || [];
-        currentHand.forEach(t => handContainer.appendChild(createTileElement(t)));
+        currentHand.forEach(t => hCont.appendChild(createTileElement(t)));
         if (gameState.drawnTile) {
             const drawnEl = createTileElement(gameState.drawnTile);
             drawnEl.style.border = '2px solid #ffd700';
             drawnEl.style.cursor = 'pointer';
             drawnEl.title = 'クリックして捨てる (自摸切り)';
             drawnEl.addEventListener('click', () => playerDiscard(gameState.drawnTile));
-            handContainer.appendChild(drawnEl);
+            hCont.appendChild(drawnEl);
         }
     }
 
-    const myRiverEl = document.getElementById('p1-river-container');
-    if (myRiverEl) {
-        myRiverEl.innerHTML = '';
+    const myRiv = document.getElementById('p1-river-container');
+    if (myRiv) {
+        myRiv.innerHTML = '';
         const myRiver = gameState.myRiver || [];
-        myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+        myRiver.forEach(t => myRiv.appendChild(createTileElement(t, false, true)));
     }
 
-    const oppRiverEl = document.getElementById('p2-river-container');
-    if (oppRiverEl) {
-        oppRiverEl.innerHTML = '';
+    const oppRiv = document.getElementById('p2-river-container');
+    if (oppRiv) {
+        oppRiv.innerHTML = '';
         const oppRiver = gameState.oppRiver || [];
-        oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+        oppRiver.forEach(t => oppRiv.appendChild(createTileElement(t, false, true)));
     }
 
-    document.getElementById('p1-wall-count').textContent = (gameState.myWall || []).length;
-    document.getElementById('p2-wall-count').textContent = gameState.oppWallCount;
+    const p1Wall = document.getElementById('p1-wall-count');
+    if (p1Wall) p1Wall.textContent = (gameState.myWall || []).length;
+    const p2Wall = document.getElementById('p2-wall-count');
+    if (p2Wall) p2Wall.textContent = gameState.oppWallCount;
 
-    document.getElementById('draw-btn').disabled = !isMyTurn || gameState.drawnTile !== null;
+    const drawBtn = document.getElementById('draw-btn');
+    if (drawBtn) drawBtn.disabled = !isMyTurn || gameState.drawnTile !== null;
 }
 
 async function playerDraw() {
@@ -638,8 +641,10 @@ async function playerDraw() {
     setDialogue(`ツモった！ 「${tileToString(gameState.drawnTile)}」`);
 
     const canTsumo = checkWinningHand([...(gameState.myHand || []), gameState.drawnTile], gameState.drawnTile);
-    document.getElementById('tsumo-btn').disabled = !canTsumo;
-    document.getElementById('ron-btn').disabled = true;
+    const tsumoBtn = document.getElementById('tsumo-btn');
+    if (tsumoBtn) tsumoBtn.disabled = !canTsumo;
+    const ronBtn = document.getElementById('ron-btn');
+    if (ronBtn) ronBtn.disabled = true;
 }
 
 async function playerDiscard(tile) {
@@ -713,9 +718,12 @@ function checkDrawGame() {
 
 function endGame(winnerNum, message) {
     gameState.gameOver = true;
-    document.getElementById('draw-btn').disabled = true;
-    document.getElementById('ron-btn').disabled = true;
-    document.getElementById('tsumo-btn').disabled = true;
+    const dBtn = document.getElementById('draw-btn');
+    if (dBtn) dBtn.disabled = true;
+    const rBtn = document.getElementById('ron-btn');
+    if (rBtn) rBtn.disabled = true;
+    const tBtn = document.getElementById('tsumo-btn');
+    if (tBtn) tBtn.disabled = true;
 
     if (winnerNum !== 0 && gameState.currentYaku) {
         const cutinEl = document.getElementById('yaku-cutin');

@@ -265,7 +265,6 @@ async function joinRoom() {
     const data = snapshot.val();
 
     if (!data) {
-        // Host (P1)
         gameState.myPlayerNum = 1;
         gameState.oppPlayerNum = 2;
         await roomRef.set({
@@ -286,7 +285,6 @@ async function joinRoom() {
         });
         statusEl.textContent = "ルーム作成完了！相手を待っています...";
     } else {
-        // Guest (P2)
         gameState.myPlayerNum = 2;
         gameState.oppPlayerNum = 1;
         await roomRef.child('players').update({
@@ -326,7 +324,6 @@ function setupFirebaseListener() {
         const p1 = playerList.find(p => p.role === 1);
         const p2 = playerList.find(p => p.role === 2);
 
-        // Both players must be present AND ready
         if (p1 && p2 && p1.ready && p2.ready) {
             if (screens.setup && screens.setup.classList.contains('active')) {
                 startBattle();
@@ -396,44 +393,51 @@ function updateBuilderUI() {
     const hand = gameState.myHand;
     const wall = gameState.myWall;
 
-    document.getElementById('hand-count').textContent = hand.length;
-    document.getElementById('wall-count').textContent = wall.length;
-    document.getElementById('pool-count').textContent = pool.length;
+    document.getElementById('hand-count').textContent = (hand || []).length;
+    document.getElementById('wall-count').textContent = (wall || []).length;
+    document.getElementById('pool-count').textContent = (pool || []).length;
 
     const handContainer = document.getElementById('setup-hand-tiles');
-    handContainer.innerHTML = '';
-    hand.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        handContainer.appendChild(el);
-    });
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        (hand || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            handContainer.appendChild(el);
+        });
+    }
 
     const wallContainer = document.getElementById('setup-wall-tiles');
-    wallContainer.innerHTML = '';
-    wall.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-        wallContainer.appendChild(el);
-    });
+    if (wallContainer) {
+        wallContainer.innerHTML = '';
+        (wall || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+            wallContainer.appendChild(el);
+        });
+    }
 
     const poolContainer = document.getElementById('tile-pool');
-    poolContainer.innerHTML = '';
-    pool.forEach((t, idx) => {
-        const el = createTileElement(t);
-        el.addEventListener('click', () => {
-            if (gameState.builderMode === 'hand' && hand.length < 13) {
-                pool.splice(idx, 1); hand.push(t);
-                if (hand.length === 13) setBuilderMode('wall');
-                updateBuilderUI();
-            } else if (gameState.builderMode === 'wall' && wall.length < 17) {
-                pool.splice(idx, 1); wall.push(t);
-                updateBuilderUI();
-            }
+    if (poolContainer) {
+        poolContainer.innerHTML = '';
+        (pool || []).forEach((t, idx) => {
+            const el = createTileElement(t);
+            el.addEventListener('click', () => {
+                if (gameState.builderMode === 'hand' && (hand || []).length < 13) {
+                    pool.splice(idx, 1); hand.push(t);
+                    if (hand.length === 13) setBuilderMode('wall');
+                    updateBuilderUI();
+                } else if (gameState.builderMode === 'wall' && (wall || []).length < 17) {
+                    pool.splice(idx, 1); wall.push(t);
+                    updateBuilderUI();
+                }
+            });
+            poolContainer.appendChild(el);
         });
-        poolContainer.appendChild(el);
-    });
+    }
 
-    document.getElementById('confirm-deck-btn').disabled = !(hand.length === 13 && wall.length === 17);
+    const confirmBtn = document.getElementById('confirm-deck-btn');
+    if (confirmBtn) confirmBtn.disabled = !((hand || []).length === 13 && (wall || []).length === 17);
 }
 
 async function handleDeckConfirm() {
@@ -525,7 +529,7 @@ function updateBattleUI() {
         if (gameState.drawnTile) {
             waitText.textContent = "ツモ中...";
         } else {
-            const waitingTiles = evaluator.getWaitingTiles(gameState.myHand);
+            const waitingTiles = evaluator.getWaitingTiles(gameState.myHand || []);
             if (waitingTiles.length > 0) {
                 waitText.textContent = "テンパイ！";
                 waitingTiles.forEach(tileStr => {
@@ -539,23 +543,29 @@ function updateBattleUI() {
     }
 
     const handContainer = document.getElementById('p1-hand-container');
-    handContainer.innerHTML = '';
-    gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
-    if (gameState.drawnTile) {
-        const drawnEl = createTileElement(gameState.drawnTile);
-        drawnEl.style.border = '2px solid #ffd700';
-        handContainer.appendChild(drawnEl);
+    if (handContainer) {
+        handContainer.innerHTML = '';
+        (gameState.myHand || []).forEach(t => handContainer.appendChild(createTileElement(t)));
+        if (gameState.drawnTile) {
+            const drawnEl = createTileElement(gameState.drawnTile);
+            drawnEl.style.border = '2px solid #ffd700';
+            handContainer.appendChild(drawnEl);
+        }
     }
 
     const myRiverEl = document.getElementById('p1-river-container');
-    myRiverEl.innerHTML = '';
-    gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    if (myRiverEl) {
+        myRiverEl.innerHTML = '';
+        (gameState.myRiver || []).forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+    }
 
     const oppRiverEl = document.getElementById('p2-river-container');
-    oppRiverEl.innerHTML = '';
-    gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+    if (oppRiverEl) {
+        oppRiverEl.innerHTML = '';
+        (gameState.oppRiver || []).forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+    }
 
-    document.getElementById('p1-wall-count').textContent = gameState.myWall.length;
+    document.getElementById('p1-wall-count').textContent = (gameState.myWall || []).length;
     document.getElementById('p2-wall-count').textContent = gameState.oppWallCount;
 
     document.getElementById('draw-btn').disabled = !isMyTurn || gameState.drawnTile !== null;
@@ -564,7 +574,7 @@ function updateBattleUI() {
 async function playerDraw() {
     if (gameState.gameOver) return;
 
-    if (gameState.myWall.length === 0) {
+    if ((gameState.myWall || []).length === 0) {
         checkDrawGame();
         return;
     }
@@ -573,7 +583,7 @@ async function playerDraw() {
     updateBattleUI();
     setDialogue(`ツモった！ 「${tileToString(gameState.drawnTile)}」`);
 
-    const canTsumo = checkWinningHand([...gameState.myHand, gameState.drawnTile], gameState.drawnTile);
+    const canTsumo = checkWinningHand([...(gameState.myHand || []), gameState.drawnTile], gameState.drawnTile);
     document.getElementById('tsumo-btn').disabled = !canTsumo;
     document.getElementById('ron-btn').disabled = true;
 }

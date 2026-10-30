@@ -15,7 +15,6 @@ const firebaseConfig = {
   measurementId: "G-SFHCYM4L0R"
 };
 
-// Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -202,29 +201,13 @@ class MahjongEvaluator {
     }
 }
 
-// --- Game State & Variables ---
 let gameState = {
-    gameMode: '1p',
-    myPlayerNum: 1,
-    oppPlayerNum: 2,
-    round: 1,
-    turn: 1,
-    maxTurns: 17,
-    p1Points: 25000,
-    p2Points: 25000,
-    myPool: [],
-    myHand: [],
-    myWall: [],
-    myRiver: [],
-    oppRiver: [],
-    oppWallCount: 17,
-    drawnTile: null,
-    gameOver: false,
-    builderMode: 'hand',
-    activePlayer: 1,
-    currentYaku: null,
-    roomId: null,
-    userId: null
+    gameMode: '1p', myPlayerNum: 1, oppPlayerNum: 2, round: 1, turn: 1, maxTurns: 17,
+    p1Points: 25000, p2Points: 25000,
+    myPool: [], myHand: [], myWall: [], myRiver: [],
+    oppRiver: [], oppWallCount: 17,
+    drawnTile: null, gameOver: false, builderMode: 'hand', activePlayer: 1, currentYaku: null,
+    roomId: null, userId: null
 };
 
 let screens = {};
@@ -240,17 +223,12 @@ document.addEventListener('DOMContentLoaded', () => {
         result: document.getElementById('result-modal')
     };
 
-    // Generate a random room ID for the host
     const randomRoomId = Math.random().toString(36).substr(2, 6).toUpperCase();
     document.getElementById('my-room-id').textContent = randomRoomId;
 
-    // UI Events
     document.getElementById('join-room-btn').addEventListener('click', joinRoom);
     document.getElementById('start-1p-btn').addEventListener('click', () => {
-        gameState.gameMode = '1p';
-        gameState.myPlayerNum = 1;
-        initBuilder();
-        switchScreen('setup');
+        gameState.gameMode = '1p'; gameState.myPlayerNum = 1; initBuilder(); switchScreen('setup');
     });
     document.getElementById('rules-btn').addEventListener('click', () => screens.rules.classList.add('active'));
     document.getElementById('close-rules-btn').addEventListener('click', () => screens.rules.classList.remove('active'));
@@ -266,12 +244,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('tsumo-btn').addEventListener('click', playerTsumo);
     document.getElementById('next-match-btn').addEventListener('click', resetMatch);
     document.getElementById('restart-game-btn').addEventListener('click', () => {
-        screens.result.classList.remove('active');
+        if (screens.result) screens.result.classList.remove('active');
         switchScreen('title');
     });
 });
-
-// --- Firebase Integration ---
 
 async function joinRoom() {
     const roomIDInput = document.getElementById('remote-room-id').value.toUpperCase();
@@ -284,13 +260,12 @@ async function joinRoom() {
     gameState.roomId = roomIDInput;
     gameState.userId = 'user_' + Math.random().toString(36).substr(2, 9);
 
-    // Determine if we are the first person in the room (Host) or second (Guest)
     const roomRef = db.ref('rooms/' + gameState.roomId);
     const snapshot = await roomRef.once('value');
     const data = snapshot.val();
 
     if (!data) {
-        // We are the host
+        // Host (P1)
         gameState.myPlayerNum = 1;
         gameState.oppPlayerNum = 2;
         await roomRef.set({
@@ -311,7 +286,7 @@ async function joinRoom() {
         });
         statusEl.textContent = "ルーム作成完了！相手を待っています...";
     } else {
-        // We are the guest
+        // Guest (P2)
         gameState.myPlayerNum = 2;
         gameState.oppPlayerNum = 1;
         await roomRef.child('players').update({
@@ -320,7 +295,6 @@ async function joinRoom() {
         statusEl.textContent = "ルームに参加しました！";
     }
 
-    // Start listening for game state changes
     setupFirebaseListener();
     initBuilder();
     switchScreen('setup');
@@ -329,7 +303,6 @@ async function joinRoom() {
 function setupFirebaseListener() {
     const roomRef = db.ref('rooms/' + gameState.roomId);
 
-    // Watch public game state
     roomRef.child('public').on('value', snapshot => {
         const data = snapshot.val();
         if (!data) return;
@@ -343,27 +316,24 @@ function setupFirebaseListener() {
         gameState.gameOver = data.gameOver;
 
         updateBattleUI();
-
-        if (data.gameOver) {
-            // Handle game over via DB signal if necessary
-        }
     });
 
-    // Watch player readiness for battle start
     roomRef.child('players').on('value', snapshot => {
         const players = snapshot.val();
         if (!players) return;
 
-        const p1Ready = Object.values(players).find(p => p.role === 1)?.ready;
-        const p2Ready = Object.values(players).find(p => p.role === 2)?.ready;
+        const playerList = Object.values(players);
+        const p1 = playerList.find(p => p.role === 1);
+        const p2 = playerList.find(p => p.role === 2);
 
-        if (p1Ready && p2Ready && screens.setup.classList.contains('active')) {
-            startBattle();
+        // Both players must be present AND ready
+        if (p1 && p2 && p1.ready && p2.ready) {
+            if (screens.setup && screens.setup.classList.contains('active')) {
+                startBattle();
+            }
         }
     });
 }
-
-// --- Game Logic (Firebase Modified) ---
 
 function switchScreen(screenName) {
     Object.values(screens).forEach(s => {
@@ -606,11 +576,6 @@ async function playerDraw() {
     const canTsumo = checkWinningHand([...gameState.myHand, gameState.drawnTile], gameState.drawnTile);
     document.getElementById('tsumo-btn').disabled = !canTsumo;
     document.getElementById('ron-btn').disabled = true;
-
-    if (gameState.gameMode === 'online') {
-        // 通知だけ送る（相手にツモったことを知らせる）
-        // 実際の捨て牌は playerDiscard で送る
-    }
 }
 
 async function playerDiscard(tile) {
@@ -623,7 +588,6 @@ async function playerDiscard(tile) {
         const riverKey = (gameState.myPlayerNum === 1) ? 'p1River' : 'p2River';
         const currentRiver = gameState.myPlayerNum === 1 ? gameState.myRiver : gameState.oppRiver;
 
-        // Firebaseに捨て牌を同期
         await db.ref(`rooms/${gameState.roomId}/public`).update({
             [riverKey]: currentRiver,
             activePlayer: gameState.oppPlayerNum,
@@ -640,8 +604,7 @@ async function playerDiscard(tile) {
 }
 
 function processOpponentDiscard(tile, playerId) {
-    // この関数は Firebase listener 内で自動的に処理されるため、
-    // 外部から直接呼ぶのではなく、updateBattleUI等で反映されます。
+    // This is handled by the Firebase listener and updateBattleUI()
 }
 
 async function playerRon() {
@@ -704,8 +667,7 @@ function endGame(winnerNum, message) {
 
 function showFinalResult(winnerNum, message) {
     const resultModal = screens.result;
-    const titleEl = document.getElementById('result-title');
-    const msgEl = document.getElementById('result-message');
+    const titleEl = document.getElementById('result-title'), msgEl = document.getElementById('result-message');
     if (winnerNum === gameState.myPlayerNum) {
         if (titleEl) { titleEl.textContent = "勝利 (VICTORY)"; titleEl.style.color = "#ffd700"; }
     } else if (winnerNum === 0) {

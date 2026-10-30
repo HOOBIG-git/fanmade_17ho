@@ -301,14 +301,17 @@ async function joinRoom() {
 function setupFirebaseListener() {
     const roomRef = db.ref('rooms/' + gameState.roomId);
 
-    roomRef.child('public').on('value', snapshot => {
+    // public データの監視
+    roomRef.child('public').on('value', async snapshot => {
         const data = snapshot.val();
         if (!data) return;
 
+        // 1. 対局開始の検知
         if (data.status === 'playing' && screens.setup && screens.setup.classList.contains('active')) {
             startBattle();
         }
 
+        // 2. 状態の同期
         gameState.activePlayer = data.activePlayer;
         gameState.turn = data.turn;
         gameState.round = data.round;
@@ -318,31 +321,26 @@ function setupFirebaseListener() {
         gameState.gameOver = data.gameOver;
 
         updateBattleUI();
-    });
 
-    roomRef.child('players').on('value', async snapshot => {
-        const players = snapshot.val();
-        if (!players) return;
-
-        const playerList = Object.values(players);
-        const p1 = playerList.find(p => p.role === 1);
-        const p2 = playerList.find(p => p.role === 2);
-
-        if (p1 && p2 && p1.ready && p2.ready) {
-            try {
-                const publicSnap = await roomRef.child('public/status').once('value');
-                const currentStatus = publicSnap.val();
-
-                if (currentStatus !== 'playing') {
+        // 3. 両者がreadyかチェックして開始させる (誰が呼んでもいいように)
+        const playersSnap = await roomRef.child('players').once('value');
+        const players = playersSnap.val();
+        if (players) {
+            const pList = Object.values(players);
+            if (pList.length === 2 && pList.every(p => p.ready)) {
+                if (data.status !== 'playing') {
                     await roomRef.child('public').update({
                         status: 'playing',
                         activePlayer: 1
                     });
                 }
-            } catch (e) {
-                console.error("Error updating status to playing:", e);
             }
         }
+    });
+
+    // players データの監視（主に ready 状態の更新通知用）
+    roomRef.child('players').on('value', snapshot => {
+        // public リスナー側で判定を行うため、ここでは特に何もしない
     });
 }
 

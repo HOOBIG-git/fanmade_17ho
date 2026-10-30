@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>逆境無頼カイジ - 17歩 ONLINE</title>
     <link rel="stylesheet" href="style.css">
-    <!-- PeerJS ライブラリを追加 -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Firebase SDK (Compatibility version) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
-        /* オンライン接続UI用の簡易スタイル */
         .online-setup {
             background: rgba(0,0,0,0.7);
             border: 2px solid #ffd700;
@@ -19,8 +19,8 @@
             color: white;
             text-align: center;
         }
-        .id-display { margin-bottom: 15px; font-size: 1.1rem; }
-        #my-peer-id { color: #ffd700; font-family: monospace; font-size: 1.2rem; }
+        .room-display { margin-bottom: 15px; font-size: 1.1rem; }
+        #my-room-id { color: #ffd700; font-family: monospace; font-size: 1.2rem; }
         .connect-box { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
         .connect-box input { padding: 10px; border-radius: 5px; border: none; width: 60%; }
         .status-text { font-size: 0.9rem; margin-top: 5px; }
@@ -34,14 +34,13 @@
             <h1 class="game-title"><span>奇跡のゲーム</span><br>１７歩 <span class="sub-title">ONLINE</span></h1>
             <p class="subtitle-desc">命を賭けた究極の麻雀勝負——オンライン対戦</p>
 
-            <!-- オンライン接続UI -->
             <div class="online-setup">
-                <div class="id-display">
-                    <span>あなたのID: </span><strong id="my-peer-id">接続中...</strong>
+                <div class="room-display">
+                    <span>あなたのルームID: </span><strong id="my-room-id">生成中...</strong>
                 </div>
                 <div class="connect-box">
-                    <input type="text" id="remote-peer-id" placeholder="相手のIDを入力してください">
-                    <button id="connect-btn" class="kaiji-btn secondary">接続する</button>
+                    <input type="text" id="remote-room-id" placeholder="相手のルームIDを入力">
+                    <button id="join-room-btn" class="kaiji-btn secondary">参加する</button>
                 </div>
                 <div id="connection-status" class="status-text">未接続</div>
             </div>
@@ -53,20 +52,19 @@
             <div class="author-credit">原作：福本伸行「賭博黙示録カイジ」</div>
         </div>
 
-        <!-- Rules Modal -->
+        <!-- (以下、rules-modal, privacy-screen, setup-screen, battle-screen, result-modal は変更なしのため維持) -->
         <div id="rules-modal" class="modal">
             <div class="modal-content">
                 <h2>１７歩（じゅうななほ）ルール</h2>
                 <ul>
                     <li><strong>基本概要：</strong> 2人打ちの麻雀勝負。ランダムに配られた30枚の持ち牌プールから、手牌（13枚）と17巡分の山（17枚）を構築します。</li>
                     <li><strong>公正な配牌：</strong> 麻雀の牌山からランダムに30枚が配分されるため、同じ牌が5枚以上存在するなどの不正や偏りは一切ありません。</li>
-                    <li><strong>オンライン対戦：</strong> IDを共有して接続し、互いの手牌を隠したまま真剣勝負！</li>
+                    <li><strong>オンライン対戦：</strong> ルームIDを共有して接続し、互いの手牌を隠したまま真剣勝負！</li>
                 </ul>
                 <button id="close-rules-btn" class="kaiji-btn">閉じる</button>
             </div>
         </div>
 
-        <!-- Privacy Screen -->
         <div id="privacy-screen" class="modal">
             <div class="modal-content text-center">
                 <h2 id="privacy-title">手番交代</h2>
@@ -75,7 +73,6 @@
             </div>
         </div>
 
-        <!-- Setup Screen -->
         <div id="setup-screen" class="screen">
             <header class="game-header">
                 <h2 id="setup-header-title">牌構築フェーズ (DECK SETUP)</h2>
@@ -118,7 +115,6 @@
             </div>
         </div>
 
-        <!-- Battle Screen -->
         <div id="battle-screen" class="screen">
             <div id="zawa-overlay" class="zawa-overlay">ざわ… ざわ…</div>
             <div id="yaku-cutin" class="yaku-cutin"></div>
@@ -184,7 +180,6 @@
             </div>
         </div>
 
-        <!-- Result Modal -->
         <div id="result-modal" class="modal">
             <div class="modal-content result-content">
                 <h2 id="result-title">勝負決着</h2>

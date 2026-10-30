@@ -1,9 +1,25 @@
 // Kaiji 17-Ho Online Version
-// P2P Networking implementation using PeerJS
+// Firebase Realtime Database Implementation
 
 const SUITS = ['m', 'p', 's', 'z'];
 const HONOR_NAMES = { 1: '東', 2: '南', 3: '西', 4: '北', 5: '白', 6: '發', 7: '中' };
 
+// --- Firebase Configuration ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCKQvPfqqu_WDfWrpXwsYMwUN-BvgsXDjM",
+  authDomain: "fanmade-17ho.firebaseapp.com",
+  projectId: "fanmade-17ho",
+  storageBucket: "fanmade-17ho.firebasestorage.app",
+  messagingSenderId: "146553166120",
+  appId: "1:146553166120:web:130d8464d5d7568268581d",
+  measurementId: "G-SFHCYM4L0R"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// --- Utilities ---
 function tileToString(tile) {
     if (!tile || !tile.suit) return '';
     if (tile.suit === 'z') return HONOR_NAMES[tile.val];
@@ -186,51 +202,32 @@ class MahjongEvaluator {
     }
 }
 
-class NetworkManager {
-    constructor() {
-        this.peer = new Peer();
-        this.conn = null;
-        this.onConnected = null;
-        this.onMessage = null;
-        this.peer.on('open', id => {
-            const el = document.getElementById('my-peer-id');
-            if (el) el.textContent = id;
-        });
-        this.peer.on('connection', conn => { this.conn = conn; this.setupConnection(); });
-    }
-    setupConnection() {
-        this.conn.on('open', () => {
-            const statusEl = document.getElementById('connection-status');
-            if (statusEl) {
-                statusEl.textContent = "接続完了！";
-                statusEl.style.color = "#00ff00";
-            }
-            if (this.onConnected) this.onConnected();
-        });
-        this.conn.on('data', data => { if (this.onMessage) this.onMessage(data); });
-        this.conn.on('error', err => {
-            console.error("Peer connection error:", err);
-            const statusEl = document.getElementById('connection-status');
-            if (statusEl) {
-                statusEl.textContent = "接続エラーが発生しました";
-                statusEl.style.color = "#ff0000";
-            }
-        });
-    }
-    connect(remoteId) { this.conn = this.peer.connect(remoteId); this.setupConnection(); }
-    send(type, payload) { if (this.conn && this.conn.open) this.conn.send({ type, payload }); }
-}
-
+// --- Game State & Variables ---
 let gameState = {
-    gameMode: '1p', myPlayerNum: 1, oppPlayerNum: 2, round: 1, turn: 1, maxTurns: 17,
-    p1Points: 25000, p2Points: 25000, p1Debt: 0, p2Debt: 0,
-    myPool: [], myHand: [], myWall: [], myRiver: [],
-    oppRiver: [], oppWallCount: 17,
-    drawnTile: null, gameOver: false, builderMode: 'hand', activePlayer: 1, currentYaku: null
+    gameMode: '1p',
+    myPlayerNum: 1,
+    oppPlayerNum: 2,
+    round: 1,
+    turn: 1,
+    maxTurns: 17,
+    p1Points: 25000,
+    p2Points: 25000,
+    myPool: [],
+    myHand: [],
+    myWall: [],
+    myRiver: [],
+    oppRiver: [],
+    oppWallCount: 17,
+    drawnTile: null,
+    gameOver: false,
+    builderMode: 'hand',
+    activePlayer: 1,
+    currentYaku: null,
+    roomId: null,
+    userId: null
 };
 
 let screens = {};
-const network = new NetworkManager();
 const evaluator = new MahjongEvaluator();
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -243,114 +240,169 @@ document.addEventListener('DOMContentLoaded', () => {
         result: document.getElementById('result-modal')
     };
 
-    const safeAddEventListener = (id, event, callback) => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener(event, callback);
-    };
+    // Generate a random room ID for the host
+    const randomRoomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+    document.getElementById('my-room-id').textContent = randomRoomId;
 
-    safeAddEventListener('connect-btn', 'click', () => {
-        const remoteIdEl = document.getElementById('remote-peer-id');
-        if (remoteIdEl) {
-            const remoteId = remoteIdEl.value;
-            if (remoteId) {
-                const statusEl = document.getElementById('connection-status');
-                if (statusEl) statusEl.textContent = "接続中...";
-                network.connect(remoteId);
-            }
-        }
+    // UI Events
+    document.getElementById('join-room-btn').addEventListener('click', joinRoom);
+    document.getElementById('start-1p-btn').addEventListener('click', () => {
+        gameState.gameMode = '1p';
+        gameState.myPlayerNum = 1;
+        initBuilder();
+        switchScreen('setup');
     });
-
-    network.onConnected = () => {
-        gameState.gameMode = 'online';
-        // 自分が接続をリクエストした側（ゲスト）か、受けた側（ホスト）か判定
-        if (network.conn.peer === network.peer.id) {
-            // 自分がホスト
-            gameState.myPlayerNum = 1;
-            gameState.oppPlayerNum = 2;
-            initBuilder();
-            switchScreen('setup');
-        } else {
-            // 自分がゲスト
-            gameState.myPlayerNum = 2;
-            gameState.oppPlayerNum = 1;
-            network.send('HELLO_GUEST', { name: 'Player 2' });
-            initBuilder();
-            switchScreen('setup');
-        }
-    };
-
-    network.onMessage = (data) => handleNetworkMessage(data);
-
-    safeAddEventListener('start-1p-btn', 'click', () => {
-        gameState.gameMode = '1p'; gameState.myPlayerNum = 1; initBuilder(); switchScreen('setup');
-    });
-    safeAddEventListener('rules-btn', 'click', () => { if (screens.rules) screens.rules.classList.add('active'); });
-    safeAddEventListener('close-rules-btn', 'click', () => { if (screens.rules) screens.rules.classList.remove('active'); });
-    safeAddEventListener('clear-deck-btn', 'click', resetCurrentPoolAllocation);
-    safeAddEventListener('sort-pool-btn', 'click', sortCurrentPool);
-    safeAddEventListener('auto-distribute-btn', 'click', autoDistributeCurrentPlayer);
-    safeAddEventListener('mode-hand-btn', 'click', () => setBuilderMode('hand'));
-    safeAddEventListener('mode-wall-btn', 'click', () => setBuilderMode('wall'));
-    safeAddEventListener('confirm-deck-btn', 'click', handleDeckConfirm);
-    safeAddEventListener('privacy-ready-btn', 'click', handlePrivacyReady);
-    safeAddEventListener('draw-btn', 'click', playerDraw);
-    safeAddEventListener('ron-btn', 'click', playerRon);
-    safeAddEventListener('tsumo-btn', 'click', playerTsumo);
-    safeAddEventListener('next-match-btn', 'click', resetMatch);
-    safeAddEventListener('restart-game-btn', 'click', () => {
-        if (screens.result) screens.result.classList.remove('active');
+    document.getElementById('rules-btn').addEventListener('click', () => screens.rules.classList.add('active'));
+    document.getElementById('close-rules-btn').addEventListener('click', () => screens.rules.classList.remove('active'));
+    document.getElementById('clear-deck-btn').addEventListener('click', resetCurrentPoolAllocation);
+    document.getElementById('sort-pool-btn').addEventListener('click', sortCurrentPool);
+    document.getElementById('auto-distribute-btn').addEventListener('click', autoDistributeCurrentPlayer);
+    document.getElementById('mode-hand-btn').addEventListener('click', () => setBuilderMode('hand'));
+    document.getElementById('mode-wall-btn').addEventListener('click', () => setBuilderMode('wall'));
+    document.getElementById('confirm-deck-btn').addEventListener('click', handleDeckConfirm);
+    document.getElementById('privacy-ready-btn').addEventListener('click', handlePrivacyReady);
+    document.getElementById('draw-btn').addEventListener('click', playerDraw);
+    document.getElementById('ron-btn').addEventListener('click', playerRon);
+    document.getElementById('tsumo-btn').addEventListener('click', playerTsumo);
+    document.getElementById('next-match-btn').addEventListener('click', resetMatch);
+    document.getElementById('restart-game-btn').addEventListener('click', () => {
+        screens.result.classList.remove('active');
         switchScreen('title');
     });
 });
 
-function handleNetworkMessage(data) {
-    const { type, payload } = data;
-    switch(type) {
-        case 'HELLO_GUEST':
-            gameState.myPlayerNum = 1;
-            gameState.oppPlayerNum = 2;
-            initBuilder();
-            switchScreen('setup');
-            break;
-        case 'BUILD_COMPLETE':
-            if (gameState.myPlayerNum === 1) {
-                showPrivacyModal("相手の構築完了", "相手が牌を組み上げました。あなたも構築を完了させてください。", null);
-            } else {
-                network.send('START_BATTLE', {});
+// --- Firebase Integration ---
+
+async function joinRoom() {
+    const roomIDInput = document.getElementById('remote-room-id').value.toUpperCase();
+    if (!roomIDInput) return;
+
+    const statusEl = document.getElementById('connection-status');
+    statusEl.textContent = "接続中...";
+
+    gameState.gameMode = 'online';
+    gameState.roomId = roomIDInput;
+    gameState.userId = 'user_' + Math.random().toString(36).substr(2, 9);
+
+    // Determine if we are the first person in the room (Host) or second (Guest)
+    const roomRef = db.ref('rooms/' + gameState.roomId);
+    const snapshot = await roomRef.once('value');
+    const data = snapshot.val();
+
+    if (!data) {
+        // We are the host
+        gameState.myPlayerNum = 1;
+        gameState.oppPlayerNum = 2;
+        await roomRef.set({
+            public: {
+                status: 'waiting',
+                activePlayer: 1,
+                turn: 1,
+                round: 1,
+                p1River: [],
+                p2River: [],
+                p1Points: 25000,
+                p2Points: 25000,
+                gameOver: false
+            },
+            players: {
+                [gameState.userId]: { role: 1, ready: false }
             }
-            break;
-        case 'START_BATTLE': startBattle(); break;
-        case 'DISCARD': processOpponentDiscard(payload.tile, payload.playerId); break;
-        case 'TSUMO_SIGNAL': setDialogue(`相手が牌をツモった…`); updateBattleUI(); break;
-        case 'WIN_SIGNAL': endGame(payload.playerId, payload.message); break;
+        });
+        statusEl.textContent = "ルーム作成完了！相手を待っています...";
+    } else {
+        // We are the guest
+        gameState.myPlayerNum = 2;
+        gameState.oppPlayerNum = 1;
+        await roomRef.child('players').update({
+            [gameState.userId]: { role: 2, ready: false }
+        });
+        statusEl.textContent = "ルームに参加しました！";
     }
+
+    // Start listening for game state changes
+    setupFirebaseListener();
+    initBuilder();
+    switchScreen('setup');
 }
 
+function setupFirebaseListener() {
+    const roomRef = db.ref('rooms/' + gameState.roomId);
+
+    // Watch public game state
+    roomRef.child('public').on('value', snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+
+        gameState.activePlayer = data.activePlayer;
+        gameState.turn = data.turn;
+        gameState.round = data.round;
+        gameState.p1Points = data.p1Points;
+        gameState.p2Points = data.p2Points;
+        gameState.oppRiver = (gameState.myPlayerNum === 1) ? data.p2River : data.p1River;
+        gameState.gameOver = data.gameOver;
+
+        updateBattleUI();
+
+        if (data.gameOver) {
+            // Handle game over via DB signal if necessary
+        }
+    });
+
+    // Watch player readiness for battle start
+    roomRef.child('players').on('value', snapshot => {
+        const players = snapshot.val();
+        if (!players) return;
+
+        const p1Ready = Object.values(players).find(p => p.role === 1)?.ready;
+        const p2Ready = Object.values(players).find(p => p.role === 2)?.ready;
+
+        if (p1Ready && p2Ready && screens.setup.classList.contains('active')) {
+            startBattle();
+        }
+    });
+}
+
+// --- Game Logic (Firebase Modified) ---
+
 function switchScreen(screenName) {
-    Object.values(screens).forEach(s => { if (s && s !== screens.rules && s !== screens.privacy && s !== screens.result) s.classList.remove('active'); });
+    Object.values(screens).forEach(s => {
+        if (s && s !== screens.rules && s !== screens.privacy && s !== screens.result) {
+            s.classList.remove('active');
+        }
+    });
     if (screens[screenName]) screens[screenName].classList.add('active');
 }
 
 function initBuilder() {
     const deck = generateShuffledDeck();
-    gameState.myPool = deck.slice(0, 30); gameState.myHand = []; gameState.myWall = [];
+    gameState.myPool = deck.slice(0, 30);
+    gameState.myHand = [];
+    gameState.myWall = [];
     gameState.builderMode = 'hand';
+
     const headerTitle = document.getElementById('setup-header-title');
-    if (headerTitle) headerTitle.textContent = gameState.gameMode === 'online' ? `牌構築フェーズ - プレイヤー ${gameState.myPlayerNum}` : `牌構築フェーズ (30枚から配分)`;
-    updateBuilderUI(); triggerZawa();
+    if (headerTitle) {
+        headerTitle.textContent = gameState.gameMode === 'online'
+            ? `牌構築フェーズ - プレイヤー ${gameState.myPlayerNum}`
+            : `牌構築フェーズ (30枚から配分)`;
+    }
+    updateBuilderUI();
+    triggerZawa();
 }
 
 function setBuilderMode(mode) {
     gameState.builderMode = mode;
-    const hBtn = document.getElementById('mode-hand-btn'), wBtn = document.getElementById('mode-wall-btn');
-    if (hBtn) hBtn.classList.toggle('active', mode === 'hand');
-    if (wBtn) wBtn.classList.toggle('active', mode === 'wall');
+    document.getElementById('mode-hand-btn').classList.toggle('active', mode === 'hand');
+    document.getElementById('mode-wall-btn').classList.toggle('active', mode === 'wall');
 }
 
 function resetCurrentPoolAllocation() {
     gameState.myPool = [...gameState.myPool, ...gameState.myHand, ...gameState.myWall];
-    gameState.myHand = []; gameState.myWall = [];
-    sortCurrentPool(); updateBuilderUI();
+    gameState.myHand = [];
+    gameState.myWall = [];
+    sortCurrentPool();
+    updateBuilderUI();
 }
 
 function sortCurrentPool() {
@@ -370,75 +422,71 @@ function autoDistributeCurrentPlayer() {
 }
 
 function updateBuilderUI() {
-    const pool = gameState.myPool, hand = gameState.myHand, wall = gameState.myWall;
-    const hCount = document.getElementById('hand-count'), wCount = document.getElementById('wall-count'), pCount = document.getElementById('pool-count');
-    if (hCount) hCount.textContent = hand.length;
-    if (wCount) wCount.textContent = wall.length;
-    if (pCount) pCount.textContent = pool.length;
+    const pool = gameState.myPool;
+    const hand = gameState.myHand;
+    const wall = gameState.myWall;
+
+    document.getElementById('hand-count').textContent = hand.length;
+    document.getElementById('wall-count').textContent = wall.length;
+    document.getElementById('pool-count').textContent = pool.length;
+
     const handContainer = document.getElementById('setup-hand-tiles');
-    if (handContainer) {
-        handContainer.innerHTML = '';
-        hand.forEach((t, idx) => {
-            const el = createTileElement(t);
-            el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-            handContainer.appendChild(el);
-        });
-    }
+    handContainer.innerHTML = '';
+    hand.forEach((t, idx) => {
+        const el = createTileElement(t);
+        el.addEventListener('click', () => { hand.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+        handContainer.appendChild(el);
+    });
+
     const wallContainer = document.getElementById('setup-wall-tiles');
-    if (wallContainer) {
-        wallContainer.innerHTML = '';
-        wall.forEach((t, idx) => {
-            const el = createTileElement(t);
-            el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
-            wallContainer.appendChild(el);
-        });
-    }
+    wallContainer.innerHTML = '';
+    wall.forEach((t, idx) => {
+        const el = createTileElement(t);
+        el.addEventListener('click', () => { wall.splice(idx, 1); pool.push(t); updateBuilderUI(); });
+        wallContainer.appendChild(el);
+    });
+
     const poolContainer = document.getElementById('tile-pool');
-    if (poolContainer) {
-        poolContainer.innerHTML = '';
-        pool.forEach((t, idx) => {
-            const el = createTileElement(t);
-            el.addEventListener('click', () => {
-                if (gameState.builderMode === 'hand' && hand.length < 13) {
-                    pool.splice(idx, 1); hand.push(t);
-                    if (hand.length === 13) setBuilderMode('wall');
-                } else if (gameState.builderMode === 'wall' && wall.length < 17) {
-                    pool.splice(idx, 1); wall.push(t);
-                }
+    poolContainer.innerHTML = '';
+    pool.forEach((t, idx) => {
+        const el = createTileElement(t);
+        el.addEventListener('click', () => {
+            if (gameState.builderMode === 'hand' && hand.length < 13) {
+                pool.splice(idx, 1); hand.push(t);
+                if (hand.length === 13) setBuilderMode('wall');
                 updateBuilderUI();
-            });
-            poolContainer.appendChild(el);
+            } else if (gameState.builderMode === 'wall' && wall.length < 17) {
+                pool.splice(idx, 1); wall.push(t);
+                updateBuilderUI();
+            }
         });
-    }
-    const confirmBtn = document.getElementById('confirm-deck-btn');
-    if (confirmBtn) confirmBtn.disabled = !(hand.length === 13 && wall.length === 17);
+        poolContainer.appendChild(el);
+    });
+
+    document.getElementById('confirm-deck-btn').disabled = !(hand.length === 13 && wall.length === 17);
 }
 
-function handleDeckConfirm() {
+async function handleDeckConfirm() {
     if (gameState.gameMode === 'online') {
-        network.send('BUILD_COMPLETE', { playerId: gameState.myPlayerNum });
-        if (gameState.myPlayerNum === 2) {
-            network.send('START_BATTLE', {});
-        } else {
-            setDialogue("相手の構築完了を待っています…");
-            const btn = document.getElementById('confirm-deck-btn');
-            if (btn) btn.disabled = true;
-        }
+        await db.ref(`rooms/${gameState.roomId}/players/${gameState.userId}`).update({
+            ready: true
+        });
+        setDialogue("構築完了！相手の準備を待っています…");
+        document.getElementById('confirm-deck-btn').disabled = true;
     } else {
         startBattle();
     }
 }
 
 function showPrivacyModal(title, msg, onReady) {
-    const tEl = document.getElementById('privacy-title'), mEl = document.getElementById('privacy-msg');
-    if (tEl) tEl.textContent = title;
-    if (mEl) mEl.textContent = msg;
-    if (screens.privacy) screens.privacy.classList.add('active');
+    document.getElementById('privacy-title').textContent = title;
+    document.getElementById('privacy-msg').textContent = msg;
+    screens.privacy.classList.add('active');
     gameState.pendingAction = onReady;
 }
 
 function handlePrivacyReady() {
-    if (screens.privacy) screens.privacy.classList.remove('active');
+    screens.privacy.classList.remove('active');
     if (gameState.pendingAction) {
         const action = gameState.pendingAction;
         gameState.pendingAction = null;
@@ -462,8 +510,15 @@ function startBattle() {
         gameState.oppHand = cpuDeck.slice(0, 13);
         gameState.oppWall = cpuDeck.slice(13, 30);
     }
-    gameState.turn = 1; gameState.round = 1; gameState.myRiver = []; gameState.oppRiver = [];
-    gameState.drawnTile = null; gameState.activePlayer = 1; gameState.gameOver = false;
+
+    gameState.turn = 1;
+    gameState.round = 1;
+    gameState.myRiver = [];
+    gameState.oppRiver = [];
+    gameState.drawnTile = null;
+    gameState.activePlayer = 1;
+    gameState.gameOver = false;
+
     beginBattleScreen();
 }
 
@@ -472,11 +527,6 @@ function beginBattleScreen() {
     updateBattleUI();
     setDialogue("対局開始……！ 運命の17歩が始まる…！");
     triggerZawa();
-    const drawBtn = document.getElementById('draw-btn');
-    if (drawBtn) drawBtn.disabled = (gameState.myPlayerNum !== 1);
-    if (gameState.myPlayerNum !== 1) {
-        setDialogue("相手（プレイヤー1）のターンです…");
-    }
 }
 
 function triggerZawa() {
@@ -494,10 +544,12 @@ function setDialogue(text) {
 
 function updateBattleUI() {
     const isMyTurn = (gameState.activePlayer === gameState.myPlayerNum);
-    const rDisp = document.getElementById('round-display'), tDisp = document.getElementById('turn-display');
-    if (rDisp) rDisp.textContent = `第${gameState.round}局`;
-    if (tDisp) tDisp.textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
-    const waitContainer = document.getElementById('p1-wait-container'), waitText = document.getElementById('p1-wait-tiles');
+
+    document.getElementById('round-display').textContent = `第${gameState.round}局`;
+    document.getElementById('turn-display').textContent = `${gameState.turn} / ${gameState.maxTurns} 巡目`;
+
+    const waitContainer = document.getElementById('p1-wait-container');
+    const waitText = document.getElementById('p1-wait-tiles');
     if (waitContainer && waitText) {
         waitContainer.innerHTML = '';
         if (gameState.drawnTile) {
@@ -515,97 +567,104 @@ function updateBattleUI() {
             }
         }
     }
+
     const handContainer = document.getElementById('p1-hand-container');
-    if (handContainer) {
-        handContainer.innerHTML = '';
-        gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
-        if (gameState.drawnTile) {
-            const drawnEl = createTileElement(gameState.drawnTile);
-            drawnEl.style.border = '2px solid #ffd700';
-            handContainer.appendChild(drawnEl);
-        }
+    handContainer.innerHTML = '';
+    gameState.myHand.forEach(t => handContainer.appendChild(createTileElement(t)));
+    if (gameState.drawnTile) {
+        const drawnEl = createTileElement(gameState.drawnTile);
+        drawnEl.style.border = '2px solid #ffd700';
+        handContainer.appendChild(drawnEl);
     }
+
     const myRiverEl = document.getElementById('p1-river-container');
-    if (myRiverEl) {
-        myRiverEl.innerHTML = '';
-        gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
-    }
+    myRiverEl.innerHTML = '';
+    gameState.myRiver.forEach(t => myRiverEl.appendChild(createTileElement(t, false, true)));
+
     const oppRiverEl = document.getElementById('p2-river-container');
-    if (oppRiverEl) {
-        oppRiverEl.innerHTML = '';
-        gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
-    }
-    const p1wCount = document.getElementById('p1-wall-count'), p2wCount = document.getElementById('p2-wall-count');
-    if (p1wCount) p1wCount.textContent = gameState.myWall.length;
-    if (p2wCount) p2wCount.textContent = gameState.oppWallCount;
-    const drawBtn = document.getElementById('draw-btn');
-    if (drawBtn) drawBtn.disabled = !isMyTurn || gameState.drawnTile !== null;
+    oppRiverEl.innerHTML = '';
+    gameState.oppRiver.forEach(t => oppRiverEl.appendChild(createTileElement(t, false, true)));
+
+    document.getElementById('p1-wall-count').textContent = gameState.myWall.length;
+    document.getElementById('p2-wall-count').textContent = gameState.oppWallCount;
+
+    document.getElementById('draw-btn').disabled = !isMyTurn || gameState.drawnTile !== null;
 }
 
-function playerDraw() {
+async function playerDraw() {
     if (gameState.gameOver) return;
+
     if (gameState.myWall.length === 0) {
         checkDrawGame();
         return;
     }
+
     gameState.drawnTile = gameState.myWall.shift();
     updateBattleUI();
     setDialogue(`ツモった！ 「${tileToString(gameState.drawnTile)}」`);
+
     const canTsumo = checkWinningHand([...gameState.myHand, gameState.drawnTile], gameState.drawnTile);
-    const tBtn = document.getElementById('tsumo-btn'), rBtn = document.getElementById('ron-btn');
-    if (tBtn) tBtn.disabled = !canTsumo;
-    if (rBtn) rBtn.disabled = true;
+    document.getElementById('tsumo-btn').disabled = !canTsumo;
+    document.getElementById('ron-btn').disabled = true;
+
     if (gameState.gameMode === 'online') {
-        network.send('TSUMO_SIGNAL', { playerId: gameState.myPlayerNum });
+        // 通知だけ送る（相手にツモったことを知らせる）
+        // 実際の捨て牌は playerDiscard で送る
     }
 }
 
-function playerDiscard(tile) {
+async function playerDiscard(tile) {
     const discardTile = gameState.drawnTile || tile;
     gameState.myRiver.push(discardTile);
     gameState.drawnTile = null;
     updateBattleUI();
+
     if (gameState.gameMode === 'online') {
-        network.send('DISCARD', { tile: discardTile, playerId: gameState.myPlayerNum });
+        const riverKey = (gameState.myPlayerNum === 1) ? 'p1River' : 'p2River';
+        const currentRiver = gameState.myPlayerNum === 1 ? gameState.myRiver : gameState.oppRiver;
+
+        // Firebaseに捨て牌を同期
+        await db.ref(`rooms/${gameState.roomId}/public`).update({
+            [riverKey]: currentRiver,
+            activePlayer: gameState.oppPlayerNum,
+            turn: (gameState.myPlayerNum === 1) ? gameState.turn : gameState.turn + 1
+        });
     }
+
     if (gameState.gameMode === '1p') {
         gameState.activePlayer = 2;
         setTimeout(opponentTurn, 1500);
     } else {
         gameState.activePlayer = gameState.oppPlayerNum;
-        if (gameState.activePlayer === 1) gameState.turn++;
-        if (gameState.turn > gameState.maxTurns) {
-            checkDrawGame();
-        } else {
-            setDialogue(`相手（プレイヤー ${gameState.activePlayer}）のターンです…`);
-            updateBattleUI();
-        }
     }
 }
 
 function processOpponentDiscard(tile, playerId) {
-    gameState.oppRiver.push(tile);
-    setDialogue(`相手が「${tileToString(tile)}」を捨てた！`);
-    updateBattleUI();
-    const canRon = checkWinningHand([...gameState.myHand, tile], tile);
-    const ronBtn = document.getElementById('ron-btn');
-    if (canRon && ronBtn) {
-        ronBtn.disabled = false;
-        setDialogue("チャンス…！ロンボタンを押せ！！");
-    }
+    // この関数は Firebase listener 内で自動的に処理されるため、
+    // 外部から直接呼ぶのではなく、updateBattleUI等で反映されます。
 }
 
-function playerRon() {
+async function playerRon() {
     if (gameState.gameOver) return;
     triggerZawa();
-    network.send('WIN_SIGNAL', { playerId: gameState.myPlayerNum, message: `プレイヤー ${gameState.myPlayerNum} のロンあがり！` });
+    if (gameState.gameMode === 'online') {
+        await db.ref(`rooms/${gameState.roomId}/public`).update({
+            gameOver: true,
+            winner: gameState.myPlayerNum
+        });
+    }
     endGame(gameState.myPlayerNum, `見事にロンあがり！勝利！！`);
 }
 
-function playerTsumo() {
+async function playerTsumo() {
     if (gameState.gameOver) return;
     triggerZawa();
-    network.send('WIN_SIGNAL', { playerId: gameState.myPlayerNum, message: `プレイヤー ${gameState.myPlayerNum} のツモあがり！` });
+    if (gameState.gameMode === 'online') {
+        await db.ref(`rooms/${gameState.roomId}/public`).update({
+            gameOver: true,
+            winner: gameState.myPlayerNum
+        });
+    }
     endGame(gameState.myPlayerNum, `完璧な自摸あがり！勝利！！`);
 }
 
@@ -627,10 +686,10 @@ function checkDrawGame() {
 
 function endGame(winnerNum, message) {
     gameState.gameOver = true;
-    const dBtn = document.getElementById('draw-btn'), rBtn = document.getElementById('ron-btn'), tBtn = document.getElementById('tsumo-btn');
-    if (dBtn) dBtn.disabled = true;
-    if (rBtn) rBtn.disabled = true;
-    if (tBtn) tBtn.disabled = true;
+    document.getElementById('draw-btn').disabled = true;
+    document.getElementById('ron-btn').disabled = true;
+    document.getElementById('tsumo-btn').disabled = true;
+
     if (winnerNum !== 0 && gameState.currentYaku) {
         const cutinEl = document.getElementById('yaku-cutin');
         if (cutinEl) {
@@ -645,7 +704,8 @@ function endGame(winnerNum, message) {
 
 function showFinalResult(winnerNum, message) {
     const resultModal = screens.result;
-    const titleEl = document.getElementById('result-title'), msgEl = document.getElementById('result-message');
+    const titleEl = document.getElementById('result-title');
+    const msgEl = document.getElementById('result-message');
     if (winnerNum === gameState.myPlayerNum) {
         if (titleEl) { titleEl.textContent = "勝利 (VICTORY)"; titleEl.style.color = "#ffd700"; }
     } else if (winnerNum === 0) {
@@ -668,10 +728,11 @@ function opponentTurn() {
     const oppDrawn = generateShuffledDeck()[0];
     setDialogue(`村上がツモった…`);
     setTimeout(() => {
-        processOpponentDiscard(oppDrawn, 2);
+        gameState.oppRiver.push(oppDrawn);
+        setDialogue(`村上が「${tileToString(oppDrawn)}」を捨てた。`);
+        updateBattleUI();
         gameState.activePlayer = 1;
         gameState.turn++;
         if (gameState.turn > gameState.maxTurns) checkDrawGame();
-        updateBattleUI();
     }, 1500);
 }

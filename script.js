@@ -15,8 +15,18 @@ const firebaseConfig = {
   measurementId: "G-SFHCYM4L0R"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+// Firebaseの初期化を安全に行う
+let db = null;
+try {
+    if (typeof firebase !== 'undefined') {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+    } else {
+        console.error("Firebase SDK not loaded. Please check your internet connection or CDN links.");
+    }
+} catch (e) {
+    console.error("Firebase Initialization Error:", e);
+}
 
 // --- Utilities ---
 function tileToString(tile) {
@@ -214,6 +224,14 @@ let screens = {};
 const evaluator = new MahjongEvaluator();
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. まずルームIDを生成して表示する (Firebase接続に関わらず実行)
+    const randomRoomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+    const roomIdEl = document.getElementById('my-room-id');
+    if (roomIdEl) {
+        roomIdEl.textContent = randomRoomId;
+    }
+
+    // 2. 画面要素のキャッシュ
     screens = {
         title: document.getElementById('title-screen'),
         setup: document.getElementById('setup-screen'),
@@ -223,9 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         result: document.getElementById('result-modal')
     };
 
-    const randomRoomId = Math.random().toString(36).substr(2, 6).toUpperCase();
-    document.getElementById('my-room-id').textContent = randomRoomId;
-
+    // 3. イベントリスナーの登録
     document.getElementById('join-room-btn').addEventListener('click', joinRoom);
     document.getElementById('start-1p-btn').addEventListener('click', () => {
         gameState.gameMode = '1p'; gameState.myPlayerNum = 1; initBuilder(); switchScreen('setup');
@@ -250,6 +266,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function joinRoom() {
+    if (!db) {
+        alert("Firebase の接続に失敗しています。ページをリロードして再度お試しください。");
+        return;
+    }
     const roomIDInput = document.getElementById('remote-room-id').value.toUpperCase();
     if (!roomIDInput) return;
 
@@ -261,57 +281,59 @@ async function joinRoom() {
     gameState.userId = 'user_' + Math.random().toString(36).substr(2, 9);
 
     const roomRef = db.ref('rooms/' + gameState.roomId);
-    const snapshot = await roomRef.once('value');
-    const data = snapshot.val();
+    try {
+        const snapshot = await roomRef.once('value');
+        const data = snapshot.val();
 
-    if (!data) {
-        gameState.myPlayerNum = 1;
-        gameState.oppPlayerNum = 2;
-        await roomRef.set({
-            public: {
-                status: 'waiting',
-                activePlayer: 1,
-                turn: 1,
-                round: 1,
-                p1River: [],
-                p2River: [],
-                p1Points: 25000,
-                p2Points: 25000,
-                gameOver: false
-            },
-            players: {
-                [gameState.userId]: { role: 1, ready: false }
-            }
-        });
-        statusEl.textContent = "ルーム作成完了！相手を待っています...";
-    } else {
-        gameState.myPlayerNum = 2;
-        gameState.oppPlayerNum = 1;
-        await roomRef.child('players').update({
-            [gameState.userId]: { role: 2, ready: false }
-        });
-        statusEl.textContent = "ルームに参加しました！";
+        if (!data) {
+            gameState.myPlayerNum = 1;
+            gameState.oppPlayerNum = 2;
+            await roomRef.set({
+                public: {
+                    status: 'waiting',
+                    activePlayer: 1,
+                    turn: 1,
+                    round: 1,
+                    p1River: [],
+                    p2River: [],
+                    p1Points: 25000,
+                    p2Points: 25000,
+                    gameOver: false
+                },
+                players: {
+                    [gameState.userId]: { role: 1, ready: false }
+                }
+            });
+            statusEl.textContent = "ルーム作成完了！相手を待っています...";
+        } else {
+            gameState.myPlayerNum = 2;
+            gameState.oppPlayerNum = 1;
+            await roomRef.child('players').update({
+                [gameState.userId]: { role: 2, ready: false }
+            });
+            statusEl.textContent = "ルームに参加しました！";
+        }
+
+        setupFirebaseListener();
+        initBuilder();
+        switchScreen('setup');
+    } catch (e) {
+        console.error("joinRoom Error:", e);
+        statusEl.textContent = "接続エラーが発生しました。";
     }
-
-    setupFirebaseListener();
-    initBuilder();
-    switchScreen('setup');
 }
 
 function setupFirebaseListener() {
     const roomRef = db.ref('rooms/' + gameState.roomId);
 
-    // public データの監視
     roomRef.child('public').on('value', async snapshot => {
         const data = snapshot.val();
         if (!data) return;
 
-        // 1. 対局開始の検知
         if (data.status === 'playing' && screens.setup && screens.setup.classList.contains('active')) {
             startBattle();
         }
 
-        // 2. 状態の同期
         gameState.activePlayer = data.activePlayer;
         gameState.turn = data.turn;
         gameState.round = data.round;
@@ -322,7 +344,6 @@ function setupFirebaseListener() {
 
         updateBattleUI();
 
-        // 3. 両者がreadyかチェックして開始させる (誰が呼んでもいいように)
         const playersSnap = await roomRef.child('players').once('value');
         const players = playersSnap.val();
         if (players) {
@@ -338,7 +359,6 @@ function setupFirebaseListener() {
         }
     });
 
-    // players データの監視（主に ready 状態の更新通知用）
     roomRef.child('players').on('value', snapshot => {
         // public リスナー側で判定を行うため、ここでは特に何もしない
     });
